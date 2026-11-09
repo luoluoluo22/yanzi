@@ -1461,7 +1461,7 @@
                                             <Grid>
                                                 <StackPanel>
                                                     <TextBlock Text="个人同步存储平台" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeNormalPlus}" FontWeight="SemiBold"/>
-                                                    <TextBlock Text="可选绑定您自己的 GitHub、Gitee、WebDAV 或 S3 网盘作为独立同步/备份介质。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                                    <TextBlock Text="可选绑定您自己的 GitHub、Gitee、WebDAV、S3 或 P2P 设备直连作为独立同步/备份介质。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" Margin="0,4,0,0" TextWrapping="Wrap"/>
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
                                                     <TextBlock Text="启用个人同步" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,12,0"/>
@@ -1472,7 +1472,6 @@
 
                                         <!-- Configuration Fields -->
                                         <StackPanel Grid.Row="1" Margin="20,20,20,16">
-                                            <Button Content="导出 GitHub 备份恢复密钥" Click="ExportGitHubBackupKeyButton_Click" HorizontalAlignment="Left" Margin="0,0,0,12" ToolTip="将恢复密钥保存到其他设备或安全介质，避免设备损坏后无法恢复备份。"/>
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*"/>
@@ -1502,6 +1501,7 @@
                                             <!-- GitHub -->
                                             <StackPanel Margin="0,16,0,0"
                                                         Visibility="{Binding IsSyncProviderGitHub, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Button Content="导出 GitHub 备份恢复密钥" Click="ExportGitHubBackupKeyButton_Click" HorizontalAlignment="Left" Margin="0,0,0,12" ToolTip="将恢复密钥保存到其他设备或安全介质，避免设备损坏后无法恢复备份。"/>
                                                 <StackPanel>
                                                     <TextBlock Text="仓库名" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
                                                     <Grid>
@@ -1822,9 +1822,67 @@
                                                     <TextBox Text="{Binding WebDavRootPath, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
                                                 </StackPanel>
                                             </StackPanel>
+                                            <!-- P2P 设备直连 (EasyTier Direct Sync) -->
+                                            <StackPanel Margin="0,16,0,0"
+                                                        Visibility="{Binding IsSyncProviderP2p, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="10"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="16"/>
+                                                        <ColumnDefinition Width="110"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="目标设备虚拟 IP（选填）" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding P2pTargetPeerIp, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}" ToolTip="留空时系统将通过 EasyTier 自动发现组网设备；也可手动填写目标虚拟 IP"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" VerticalAlignment="Bottom">
+                                                        <Button Content="探测在线对端"
+                                                                Style="{DynamicResource Yanzi.Button.Outline}"
+                                                                Height="36"
+                                                                Padding="14,0"
+                                                                Click="DetectP2pPeerButton_Click"
+                                                                ToolTip="立即查询本地 EasyTier 组网在线的其它电脑并自动填入"/>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="4">
+                                                        <TextBlock Text="服务端口" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" FontWeight="Medium" Margin="0,0,0,6"/>
+                                                        <TextBox Text="{Binding P2pPortText, Mode=TwoWay}" Height="36" Padding="12,5" VerticalContentAlignment="Center" Style="{DynamicResource Yanzi.Input}"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                                <TextBlock Text="推荐留空：燕子会通过本地 EasyTier 自动识别组网中的对端电脑，实现双向点对点同步；若有多台对端设备，可点击“探测在线对端”或手动填写。"
+                                                           Foreground="{DynamicResource BrushTextMuted}"
+                                                           FontSize="{DynamicResource FontSizeTiny}"
+                                                           Margin="0,8,0,0"
+                                                           TextWrapping="Wrap"/>
+                                                <Border Background="#0C3B82F6" BorderBrush="#253B82F6" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,14,0,0">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                                            <TextBlock Text="点对点直连（P2P）双向同步" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold"/>
+                                                            <TextBlock Text="通过 EasyTier P2P 在家里与办公室电脑之间点对点直连双向同步小程序与配置，不经过任何第三方云盘，隐私高速。"
+                                                                       Foreground="{DynamicResource BrushTextSec}"
+                                                                       FontSize="{DynamicResource FontSizeTiny}"
+                                                                       Margin="0,4,0,0"
+                                                                       TextWrapping="Wrap"/>
+                                                        </StackPanel>
+                                                        <Button Grid.Column="1"
+                                                                Content="打开 P2P 协作工作台"
+                                                                Style="{DynamicResource Yanzi.Button.Outline}"
+                                                                Height="32"
+                                                                Padding="14,0"
+                                                                Margin="16,0,0,0"
+                                                                VerticalAlignment="Center"
+                                                                Click="OpenP2pWorkbenchButton_Click"/>
+                                                    </Grid>
+                                                </Border>
+                                            </StackPanel>
                                         </StackPanel>
 
-                                        <!-- Footer with Actions -->
+<!-- Footer with Actions -->
                                         <Border Grid.Row="2" Background="#0AFFFFFF" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="0,1,0,0" Padding="20,14">
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
@@ -1843,7 +1901,7 @@
                                                         <TextBlock Text="已保存" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" VerticalAlignment="Center"/>
                                                     </StackPanel>
                                                     <Button x:Name="TestPersonalSyncButton" Content="测试连接" Style="{DynamicResource Yanzi.Button.Outline}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="TestWebDavButton_Click"/>
-                                                    <Button x:Name="ClearPersonalSyncButton" Content="清空云端" Style="{DynamicResource Yanzi.Button.Outline}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="ClearCloudButton_Click" Foreground="#FFEF4444"/>
+                                                    <Button x:Name="ClearPersonalSyncButton" Content="清空云端" Style="{DynamicResource Yanzi.Button.Outline}" Height="32" Padding="16,0" Margin="0,0,8,0" Click="ClearCloudButton_Click" Foreground="#FFEF4444" Visibility="{Binding IsClearCloudVisible, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                                     <Button x:Name="SyncPersonalSyncButton" Content="{Binding PersonalSyncActionButtonText}" Style="{DynamicResource Yanzi.Button.Outline}" Height="32" Padding="18,0" Click="SyncWebDavButton_Click"/>
                                                 </StackPanel>
                                             </Grid>

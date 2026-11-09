@@ -227,6 +227,23 @@ public partial class MainWindow
         Window_KeyDown(sender, e);
     }
     
+    // Chat body text is 22px per line. A pixel-virtualized list otherwise
+    // treats one wheel notch as a single 16px step, about one line.
+    public static double AiChatWheelScrollDistance(int delta) => delta / 120d * 5d * 22d;
+
+    private void AiChatMessagesList_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (e.Handled)
+        {
+            return;
+        }
+
+        if (TryScrollAiChatTranscript(e.Delta))
+        {
+            e.Handled = true;
+        }
+    }
+
     private void AiChatMarkdown_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (e.Handled || AiChatMessagesList == null)
@@ -236,19 +253,33 @@ public partial class MainWindow
 
         // The markdown viewer is a document scroller. It consumes the wheel even
         // when its own bars are disabled, so the conversation list never moves.
+        if (TryScrollAiChatTranscript(e.Delta))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private bool TryScrollAiChatTranscript(int delta)
+    {
+        if (AiChatMessagesList == null)
+        {
+            return false;
+        }
+
+        var distance = AiChatWheelScrollDistance(delta);
+        if (Math.Abs(distance) < 0.5)
+        {
+            return false;
+        }
+
         var scrollViewer = FindVisualChildren<System.Windows.Controls.ScrollViewer>(AiChatMessagesList).FirstOrDefault();
         if (scrollViewer == null)
         {
-            return;
+            return false;
         }
 
-        e.Handled = true;
-        var redirected = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta)
-        {
-            RoutedEvent = UIElement.MouseWheelEvent,
-            Source = scrollViewer
-        };
-        scrollViewer.RaiseEvent(redirected);
+        scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - distance);
+        return true;
     }
 
     private void AiChatMarkdown_RequestBringIntoView(object sender, RequestBringIntoViewEventArgs e)
@@ -303,6 +334,12 @@ public partial class MainWindow
         }
 
         var text = viewer.Selection?.Text;
+        if (viewer.Selection is { IsEmpty: false } && !AiChatEmoji.ContainsEmoji(text))
+        {
+            var withEmoji = AiChatEmoji.ReadPlainText(viewer.Selection.Start, viewer.Selection.End);
+            if (AiChatEmoji.ContainsEmoji(withEmoji))
+                text = withEmoji;
+        }
         if (string.IsNullOrEmpty(text))
         {
             return false;
@@ -432,6 +469,36 @@ public partial class MainWindow
     private void AiChatNewTopicButton_Click(object sender, RoutedEventArgs e)
     {
         CreateNewTopic();
+    }
+
+    private void AiChatNewProjectButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "选择项目文件",
+            Filter = "所有文件|*.*",
+            Multiselect = true,
+            CheckFileExists = true,
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop)
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        var files = dialog.FileNames
+            .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (files.Length == 0)
+            return;
+
+        var firstName = Path.GetFileName(files[0]);
+        var title = files.Length == 1 ? firstName : $"{firstName} 等 {files.Length} 个文件";
+        var topic = new AiChatTopic(string.IsNullOrWhiteSpace(title) ? "新项目" : title);
+        topic.SetProjectFiles(files);
+        _aiChatTopics.Insert(0, topic);
+        SelectTopic(topic);
+        ReorderTopics();
+        SaveTopicsToStorage();
     }
 
     private void AiChatTopicItem_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -2563,6 +2630,7 @@ public partial class MainWindow
                     title = t.Title,
                     isPinned = t.IsPinned,
                     hasUnreadReply = t.HasUnreadReply,
+                    projectFiles = t.ProjectFiles,
                     createdAt = t.CreatedAt,
                     updatedAt = t.UpdatedAt,
                     messages = t.Messages.Select(m => new
@@ -2642,6 +2710,20 @@ public partial class MainWindow
                     unreadElement.ValueKind == JsonValueKind.True)
                 {
                     topic.HasUnreadReply = true;
+                }
+
+                if (topicElement.TryGetProperty("projectFiles", out var projectFilesElement) &&
+                    projectFilesElement.ValueKind == JsonValueKind.Array)
+                {
+                    var projectFiles = new List<string>();
+                    foreach (var fileElement in projectFilesElement.EnumerateArray())
+                    {
+                        if (fileElement.ValueKind == JsonValueKind.String &&
+                            fileElement.GetString() is { Length: > 0 } projectFile)
+                            projectFiles.Add(projectFile);
+                    }
+
+                    topic.SetProjectFiles(projectFiles);
                 }
 
                 if (topicElement.TryGetProperty("messages", out var messagesArray))
@@ -3069,6 +3151,28 @@ public sealed class AiChatTopic : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(UpdatedAtLabel));
         }
+    }
+
+    // Stored for a later model context. These paths are not sent with the request yet.
+    private readonly List<string> _projectFiles = [];
+
+    public IReadOnlyList<string> ProjectFiles => _projectFiles;
+
+    public string ProjectFilesLabel => _projectFiles.Count == 0
+        ? string.Empty
+        : string.Join("、", _projectFiles.Select(Path.GetFileName));
+
+    public Visibility ProjectFilesVisibility =>
+        _projectFiles.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+    public void SetProjectFiles(IEnumerable<string> paths)
+    {
+        _projectFiles.Clear();
+        foreach (var path in paths.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase))
+            _projectFiles.Add(path);
+        OnPropertyChanged(nameof(ProjectFiles));
+        OnPropertyChanged(nameof(ProjectFilesLabel));
+        OnPropertyChanged(nameof(ProjectFilesVisibility));
     }
 
     public string UpdatedAtLabel => FormatListAge(UpdatedAt, DateTimeOffset.Now);

@@ -6,10 +6,20 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using System.Xml.Linq;
 using MdXaml;
+using Application = System.Windows.Application;
+using FontFamily = System.Windows.Media.FontFamily;
+using Brushes = System.Windows.Media.Brushes;
+using Size = System.Windows.Size;
+using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using Button = System.Windows.Controls.Button;
+using FlowDirection = System.Windows.FlowDirection;
+using Point = System.Windows.Point;
 
 internal static class Program
 {
@@ -90,6 +100,8 @@ def hello(name):
         }
         try
         {
+            if (Application.Current is null)
+                new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             var clickType=typeof(MarkdownScrollViewer).GetProperty("ClickAction")!.PropertyType;
             Console.WriteLine("CLICK_ACTION_TYPE="+clickType.FullName+" VALUES="+(clickType.IsEnum?string.Join(",",Enum.GetNames(clickType)):"non-enum"));
             var doc = new Markdown().Transform(MdText);
@@ -125,6 +137,66 @@ def hello(name):
             Assert("blockquote keeps space around the quote", quote.Margin.Top >= 4 && quote.Margin.Bottom >= 10);
             var list = blocks.OfType<System.Windows.Documents.List>().First();
             Assert("lists stay closer than paragraphs without colliding", list.Margin.Bottom >= 8);
+            var pythonHost = blocks.OfType<BlockUIContainer>().First(container =>
+                EditorText(container).Contains("def hello"));
+            var pythonShell = pythonHost.Child as Border;
+            var pythonEditor = FindNamed(pythonShell, "TextEditor");
+            var highlighting = pythonEditor?.GetType().GetProperty("SyntaxHighlighting")?.GetValue(pythonEditor);
+            var highlightingName = highlighting?.GetType().GetProperty("Name")?.GetValue(highlighting) as string;
+            var pythonCopy = pythonShell is null ? null : FindButton(pythonShell, "复制");
+            Assert("python fence is colored instead of one plain color",
+                highlighting is not null && highlightingName is not null && highlightingName.Contains("Python"));
+            Assert("python fence keeps air inside a rounded block",
+                pythonShell is not null &&
+                pythonShell.Padding.Left >= 16 && pythonShell.Padding.Top >= 14 &&
+                pythonShell.Padding.Bottom >= 14 && pythonShell.Padding.Right >= 16 &&
+                pythonShell.CornerRadius.TopLeft == 10);
+            Assert("copy stays hidden until the pointer is over the code",
+                pythonCopy is not null && pythonCopy.Visibility == Visibility.Collapsed &&
+                pythonCopy.HorizontalAlignment == HorizontalAlignment.Right);
+            RaiseMouseEnter(pythonShell!);
+            Assert("hovering the code shows its copy button", pythonCopy!.Visibility == Visibility.Visible);
+            var codeDocument = new FlowDocument();
+            codeDocument.Blocks.Add(new Paragraph(new Run("说明")));
+            var codeEditor = new System.Windows.Controls.TextBox { Text = "print(1)" };
+            var codeBlock = new BlockUIContainer(codeEditor) { Tag = "CodeBlock" };
+            codeDocument.Blocks.Add(codeBlock);
+            var plainCode = new Paragraph(new Run("{\n  \"ok\": true\n}")) { Tag = "CodeBlock" };
+            codeDocument.Blocks.Add(plainCode);
+            codeDocument.Blocks.Add(new Paragraph(new Run("结束")));
+            OpenQuickHost.AiChatMarkdownSpacing.Apply(codeDocument);
+            var codeShell = codeBlock.Child as Border;
+            var copyButtons = codeShell is null ? 0 : CountLogical<Button>(codeShell, b => b.Content as string == "复制");
+            var copyButton = codeShell is null ? null : FindButton(codeShell, "复制");
+            codeShell?.Measure(new Size(420, 240));
+            codeShell?.Arrange(new Rect(0, 0, 420, 180));
+            codeShell?.UpdateLayout();
+            var clip = codeShell?.Clip as RectangleGeometry;
+            var upgraded = codeDocument.Blocks.OfType<BlockUIContainer>().Skip(1).First();
+            Assert("fenced code keeps space around the block and inside it",
+                codeBlock.Margin.Top >= 12 && codeBlock.Margin.Bottom >= 16 &&
+                codeShell is not null &&
+                codeShell.Padding.Left >= 16 && codeShell.Padding.Top >= 14 &&
+                codeShell.Padding.Bottom >= 14 && codeShell.Padding.Right >= 16 &&
+                codeEditor.Padding.Left == 0 &&
+                upgraded.Margin.Top >= 12 && EditorText(upgraded).Contains("\"ok\""));
+            Assert("fenced code is rounded and has its own copy button",
+                codeShell is not null &&
+                codeShell.CornerRadius.TopLeft == 10 && codeShell.CornerRadius.BottomRight == 10 &&
+                copyButtons == 1 &&
+                copyButton is not null && copyButton.Visibility == Visibility.Collapsed &&
+                clip is not null && Math.Abs(clip.RadiusX - 10) < 0.1 &&
+                LogicalTreeHelper.GetParent(codeEditor) is not BlockUIContainer);
+            RaiseMouseEnter(codeShell!);
+            Assert("hovering a code block reveals the copy button on its right",
+                copyButton!.Visibility == Visibility.Visible &&
+                copyButton.HorizontalAlignment == HorizontalAlignment.Right);
+            OpenQuickHost.AiChatMarkdownSpacing.Apply(codeDocument);
+            Assert("dressing a code block twice does not nest another copy button",
+                codeBlock.Child is Border &&
+                codeDocument.Blocks.OfType<BlockUIContainer>().Count() == 2 &&
+                CountLogical<Button>(codeShell!, b => b.Content as string is "复制" or "已复制") == 1);
+            AssertStyledPythonFenceKeepsColor();
             Assert("dash lists use Codex filled markers", list.MarkerStyle == TextMarkerStyle.Disc);
             AssertNumberedMarkerIsFullyVisible();
             var view = new MarkdownScrollViewer
@@ -231,6 +303,45 @@ def hello(name):
                 detach?.Parent?.Descendants().Any(e => e.Attribute("Text")?.Value == "新建对话") == true &&
                 detach.Descendants().Any(e => (e.Attribute("Data")?.Value ?? "").Contains("open-in-new")) &&
                 !xml.Descendants().Any(e => e.Attribute("Text")?.Value == "分离窗口"));
+            var newProject = xml.Descendants().FirstOrDefault(e => e.Attribute(x + "Name")?.Value == "AiChatNewProjectButton");
+            Assert("new project sits beside new chat",
+                newProject?.Attribute("Click")?.Value == "AiChatNewProjectButton_Click" &&
+                newProject.Parent == detach?.Parent &&
+                newProject.Descendants().Any(e => e.Attribute("Text")?.Value == "新建项目"));
+            var topicEdit = xml.Descendants().FirstOrDefault(e => e.Attribute(x + "Name")?.Value == "TopicEditButton");
+            var historyRow = new Grid();
+            historyRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            historyRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            historyRow.Children.Add(new TextBlock { Text = "新对话", FontSize = 14 });
+            var historyTime = new TextBlock { Text = "刚刚", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right };
+            Grid.SetColumn(historyTime, 1);
+            var historyOverlay = new Canvas { Width = 0, Height = 0, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
+            var historyEdit = new Button { Width = 28, Height = 28, MinWidth = 0, MinHeight = 0, Visibility = Visibility.Collapsed };
+            Canvas.SetRight(historyEdit, 0);
+            Canvas.SetTop(historyEdit, -14);
+            historyOverlay.Children.Add(historyEdit);
+            Grid.SetColumn(historyOverlay, 1);
+            historyRow.Children.Add(historyTime);
+            historyRow.Children.Add(historyOverlay);
+            historyRow.Measure(new Size(260, double.PositiveInfinity));
+            var historyHeight = historyRow.DesiredSize.Height;
+            historyEdit.Visibility = Visibility.Visible;
+            historyRow.InvalidateMeasure();
+            historyRow.Measure(new Size(260, double.PositiveInfinity));
+            var projectTopic = new OpenQuickHost.AiChatTopic("新项目");
+            projectTopic.SetProjectFiles(new[] { @"C:\Users\me\Desktop\readme.txt", @"C:\Users\me\Desktop\readme.txt", @"C:\Users\me\Desktop\main.cs" });
+            Assert("history edit button overlays the card instead of growing it",
+                topicEdit?.Parent?.Name.LocalName == "Canvas" &&
+                topicEdit.Parent.Attribute("Width")?.Value == "0" &&
+                topicEdit.Parent.Attribute("Height")?.Value == "0" &&
+                topicEdit.Attribute("MinHeight")?.Value == "0" &&
+                Math.Abs(historyRow.DesiredSize.Height - historyHeight) < 0.1);
+            Assert("project file paths stay on the topic",
+                projectTopic.ProjectFiles.Count == 2 &&
+                projectTopic.ProjectFilesLabel.Contains("readme.txt") &&
+                projectTopic.ProjectFilesLabel.Contains("main.cs") &&
+                projectTopic.Title == "新项目" &&
+                projectTopic.ProjectFilesVisibility == Visibility.Visible);
             Assert("chat text uses Microsoft YaHei, not the lighter UI face",
                 (el?.Attribute("FontFamily")?.Value ?? "").Contains("Microsoft YaHei") &&
                 !(el?.Attribute("FontFamily")?.Value ?? "").Contains("YaHei UI"));
@@ -324,6 +435,15 @@ def hello(name):
             var adapter = File.ReadAllText(Path.Combine(root,"src","OpenQuickHost","MarkdownTextBehavior.cs"));
             Assert("hand-written regex Markdown parser eliminated",
                 !adapter.Contains("Regex.Split") && !adapter.Contains("headerMatch"));
+            AssertEmojiSegments();
+            AssertEmojiRunsInMarkdown();
+            AssertEmojiRunsKeepBoldText();
+            AssertEmojiTextBlockKeepsCaret();
+            AssertEmojiRendersInColor();
+            var userBubble = xml.Descendants().FirstOrDefault(e => e.Attribute(x + "Name")?.Value == "UserMessageBubble");
+            Assert("user bubble renders emoji characters",
+                userBubble?.Descendants().Any(e =>
+                    e.Attribute(XNamespace.Get("clr-namespace:OpenQuickHost") + "AiChatEmoji.Text")?.Value == "{Binding Text}") == true);
             Console.WriteLine("AI_CHAT_MDXAML_QA_OK checks="+_checks);
             return 0;
         }
@@ -424,6 +544,366 @@ def hello(name):
         while(dir != null && !File.Exists(Path.Combine(dir.FullName,"AGENTS.md")))
             dir = dir.Parent;
         return dir?.FullName ?? throw new DirectoryNotFoundException("AGENTS.md missing");
+    }
+
+    private static void AssertEmojiSegments()
+    {
+        var greeting = OpenQuickHost.AiChatEmoji.Split("你好！我是 ChatGPT。😊\n很高兴认识你！🙂");
+        Assert("greeting keeps Chinese and splits the trailing emoji",
+            greeting.Count == 4 &&
+            greeting[0].Text.StartsWith("你好") && !greeting[0].IsEmoji &&
+            greeting[1].Text == "😊" && greeting[1].IsEmoji &&
+            greeting[2].Text.Contains("很高兴认识你") && !greeting[2].IsEmoji &&
+            greeting[3].Text == "🙂" && greeting[3].IsEmoji);
+        var family = OpenQuickHost.AiChatEmoji.Split("一家👨‍👩‍👧人");
+        Assert("zwj family stays one emoji cluster",
+            family.Count == 3 && family[1].IsEmoji && family[1].Text == "👨‍👩‍👧" &&
+            !family[0].IsEmoji && family[0].Text == "一家");
+        var tone = OpenQuickHost.AiChatEmoji.Split("好👍🏻");
+        Assert("skin tone stays with the emoji", tone.Count == 2 && tone[1].IsEmoji && tone[1].Text == "👍🏻");
+        var flag = OpenQuickHost.AiChatEmoji.Split("中国🇨🇳");
+        Assert("flag pair stays one emoji", flag.Count == 2 && flag[1].Text == "🇨🇳" && flag[1].IsEmoji);
+        var keycap = OpenQuickHost.AiChatEmoji.Split("第1\uFE0F\u20E3名");
+        Assert("keycap sequence stays one emoji", keycap.Count == 3 && keycap[1].IsEmoji && keycap[1].Text == "1\uFE0F\u20E3");
+        var heart = OpenQuickHost.AiChatEmoji.Split("喜欢❤\uFE0F");
+        Assert("variation selector stays with the heart", heart.Count == 2 && heart[1].IsEmoji && heart[1].Text == "❤\uFE0F");
+        var plain = OpenQuickHost.AiChatEmoji.Split("模型。© 2026");
+        Assert("ordinary text and a copyright sign stay as text",
+            plain.Count == 1 && !plain[0].IsEmoji && !OpenQuickHost.AiChatEmoji.ContainsEmoji(plain[0].Text));
+        Assert("empty text has no segments", OpenQuickHost.AiChatEmoji.Split("") .Count == 0);
+    }
+
+    private static void AssertEmojiRunsInMarkdown()
+    {
+        var sample = "你好！我是 ChatGPT，由 OpenAI 训练的 GPT-6 人工智能模型。😊\n\n很高兴认识你！🙂";
+        var doc = new Markdown().Transform(sample);
+        OpenQuickHost.AiChatMarkdownSpacing.Apply(doc);
+        var emoji = AllEmoji(doc).Select(item => item.Text).ToList();
+        Assert("markdown emoji is drawn as a color glyph",
+            emoji.Contains("😊") && emoji.Contains("🙂"));
+        Assert("markdown Chinese stays in a normal run",
+            AllRuns(doc).Any(run => run.Text.Contains("你好")));
+        var copied = OpenQuickHost.AiChatEmoji.ReadPlainText(doc.ContentStart, doc.ContentEnd);
+        Assert("copied markdown still contains the emoji characters",
+            copied.Contains("你好") && copied.Contains("😊") && copied.Contains("很高兴认识你"));
+        var before = AllEmoji(doc).Count();
+        OpenQuickHost.AiChatMarkdownSpacing.Apply(doc);
+        Assert("emoji substitution is stable when the document is restyled",
+            AllEmoji(doc).Count() == before &&
+            OpenQuickHost.AiChatEmoji.ReadPlainText(doc.ContentStart, doc.ContentEnd).Contains("😊"));
+    }
+
+    private static void AssertEmojiRunsKeepBoldText()
+    {
+        var doc = new FlowDocument();
+        doc.Blocks.Add(new Paragraph(new Bold(new Run("加粗😊文字"))));
+        OpenQuickHost.AiChatEmoji.Apply(doc);
+        var runs = AllRuns(doc).ToList();
+        var emoji = AllEmoji(doc).ToList();
+        Assert("bold sentence keeps its weight around the emoji",
+            runs.Any(run => run.Text.Contains("加粗") && run.FontWeight == FontWeights.Bold) &&
+            runs.Any(run => run.Text.Contains("文字") && run.FontWeight == FontWeights.Bold) &&
+            emoji.Any(item => item.Text == "😊") &&
+            OpenQuickHost.AiChatEmoji.ReadPlainText(doc.ContentStart, doc.ContentEnd).Contains("加粗😊文字"));
+    }
+
+    private static void AssertEmojiTextBlockKeepsCaret()
+    {
+        var block = new TextBlock { FontFamily = new FontFamily("Segoe UI, Microsoft YaHei"), FontSize = 14 };
+        var caret = new InlineUIContainer(new Border { Width = 8, Height = 14 });
+        block.Inlines.Add(caret);
+        OpenQuickHost.AiChatEmoji.SetText(block, "你");
+        var first = block.Inlines.OfType<Run>().Single();
+        OpenQuickHost.AiChatEmoji.SetText(block, "你好");
+        Assert("plain streaming updates the same run",
+            ReferenceEquals(first, block.Inlines.OfType<Run>().Single()) && first.Text == "你好" &&
+            block.Inlines.LastInline == caret);
+        OpenQuickHost.AiChatEmoji.SetText(block, "你好😊");
+        var drawn = block.Inlines.OfType<Emoji.Wpf.EmojiInline>().Single();
+        Assert("streaming emoji is a color glyph and the caret stays",
+            block.Inlines.LastInline == caret &&
+            string.Concat(block.Inlines.OfType<Run>().Select(run => run.Text)) == "你好" &&
+            drawn.Text == "😊" && drawn.Child is System.Windows.Controls.Image);
+    }
+
+    private static void AssertEmojiRendersInColor()
+    {
+        if (Application.Current is null)
+            new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+
+        var yellow = RenderEmoji("yanzi-emoji-chat.png");
+        Console.WriteLine("EMOJI_YELLOW chat=" + yellow);
+        Assert("emoji glyphs render in color", yellow > 40);
+    }
+
+    private static int RenderEmoji(string fileName)
+    {
+        var block = new TextBlock
+        {
+            FontFamily = new FontFamily("Segoe UI, Microsoft YaHei"),
+            FontSize = 48,
+            Foreground = Brushes.White,
+            Background = Brushes.Black,
+            Margin = new Thickness(12)
+        };
+        var window = new Window
+        {
+            Width = 180,
+            Height = 140,
+            WindowStyle = WindowStyle.None,
+            ResizeMode = ResizeMode.NoResize,
+            ShowInTaskbar = false,
+            ShowActivated = false,
+            Left = 80,
+            Top = 80,
+            Background = Brushes.Black,
+            Content = block,
+            Topmost = true
+        };
+        TextOptions.SetTextFormattingMode(window, TextFormattingMode.Display);
+        TextOptions.SetTextRenderingMode(window, TextRenderingMode.ClearType);
+        OpenQuickHost.AiChatEmoji.SetText(block, "😊");
+        window.Show();
+        window.UpdateLayout();
+        Pump();
+        var origin = block.PointToScreen(new Point(0, 0));
+        var source = PresentationSource.FromVisual(block);
+        var dpi = source?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
+        var width = Math.Max(16, (int)Math.Ceiling(block.ActualWidth * dpi.M11));
+        var height = Math.Max(16, (int)Math.Ceiling(block.ActualHeight * dpi.M22));
+        using var captured = new System.Drawing.Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var graphics = System.Drawing.Graphics.FromImage(captured))
+            graphics.CopyFromScreen((int)origin.X, (int)origin.Y, 0, 0, new System.Drawing.Size(width, height));
+        var yellow = 0;
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var pixel = captured.GetPixel(x, y);
+                if (pixel.R > 200 && pixel.G > 160 && pixel.B < 120 && pixel.G > pixel.B + 50)
+                    yellow++;
+            }
+        }
+        var path = Path.Combine(Path.GetTempPath(), fileName);
+        captured.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        window.Close();
+        Console.WriteLine("EMOJI_PREVIEW=" + path + " yellow=" + yellow);
+        return yellow;
+    }
+
+    private static void Pump()
+    {
+        var frame = new DispatcherFrame();
+        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new DispatcherOperationCallback(state =>
+        {
+            ((DispatcherFrame)state!).Continue = false;
+            return null;
+        }), frame);
+        Dispatcher.PushFrame(frame);
+    }
+
+    private static IEnumerable<Run> AllRuns(FlowDocument document)
+    {
+        foreach (var block in Walk(document.Blocks))
+        {
+            if (block is Paragraph paragraph)
+            {
+                foreach (var run in RunsIn(paragraph.Inlines))
+                    yield return run;
+            }
+            else if (block is Table table)
+            {
+                foreach (var group in table.RowGroups)
+                    foreach (var row in group.Rows)
+                        foreach (var cell in row.Cells)
+                            foreach (var nested in Walk(cell.Blocks).OfType<Paragraph>())
+                                foreach (var run in RunsIn(nested.Inlines))
+                                    yield return run;
+            }
+        }
+    }
+
+    private static IEnumerable<Emoji.Wpf.EmojiInline> AllEmoji(FlowDocument document)
+    {
+        foreach (var block in Walk(document.Blocks))
+        {
+            if (block is Paragraph paragraph)
+            {
+                foreach (var emoji in EmojiIn(paragraph.Inlines))
+                    yield return emoji;
+            }
+        }
+    }
+
+    private static IEnumerable<Emoji.Wpf.EmojiInline> EmojiIn(InlineCollection inlines)
+    {
+        foreach (var inline in inlines)
+        {
+            switch (inline)
+            {
+                case Emoji.Wpf.EmojiInline emoji:
+                    yield return emoji;
+                    break;
+                case Span span:
+                    foreach (var emoji in EmojiIn(span.Inlines))
+                        yield return emoji;
+                    break;
+            }
+        }
+    }
+
+    private static IEnumerable<Run> RunsIn(InlineCollection inlines)
+    {
+        foreach (var inline in inlines)
+        {
+            switch (inline)
+            {
+                case Run run:
+                    yield return run;
+                    break;
+                case Span span:
+                    foreach (var run in RunsIn(span.Inlines))
+                        yield return run;
+                    break;
+            }
+        }
+    }
+
+    private static void AssertStyledPythonFenceKeepsColor()
+    {
+        var viewer = new MarkdownScrollViewer
+        {
+            Foreground = Brushes.White,
+            Background = (System.Windows.Media.Brush)new BrushConverter().ConvertFromString("#1B1B1B")!,
+            FontFamily = new FontFamily("Segoe UI, Microsoft YaHei"),
+            FontSize = 14,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            IsToolBarVisible = false,
+            Width = 560
+        };
+        viewer.GetType().GetProperty("MarkdownStyleName")!.SetValue(viewer, "Sasabune");
+        OpenQuickHost.AiChatMarkdownSpacing.SetIsEnabled(viewer, true);
+        viewer.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent));
+        viewer.Markdown = "```python\n# note\ndef hello():\n    return 1\n```\n";
+        OpenQuickHost.AiChatMarkdownSpacing.Apply(viewer.Document);
+        viewer.Measure(new Size(560, 800));
+        var arrangedHeight = Math.Max(1, viewer.DesiredSize.Height);
+        viewer.Arrange(new Rect(0, 0, 560, arrangedHeight));
+        viewer.UpdateLayout();
+        var editor = FindNamed(viewer, "TextEditor") ?? FindNamed(viewer.Document, "TextEditor");
+        var highlighting = editor?.GetType().GetProperty("SyntaxHighlighting")?.GetValue(editor);
+        var name = highlighting?.GetType().GetProperty("Name")?.GetValue(highlighting) as string;
+        var shell = FindShell(viewer) ?? (viewer.Document is null ? null : FindShell(viewer.Document));
+        var button = shell is null ? null : FindButton(shell, "复制");
+        Assert("styled python fence keeps a python highlighter",
+            name is not null && name.Contains("Python"));
+        Assert("styled code shell keeps inner padding and a hidden right-side copy button",
+            shell is not null && shell.Padding.Left >= 16 && shell.Padding.Top >= 14 &&
+            shell.Padding.Bottom >= 14 &&
+            button is not null && button.Visibility == Visibility.Collapsed &&
+            button.HorizontalAlignment == HorizontalAlignment.Right);
+        var width = Math.Max(1, (int)Math.Ceiling(viewer.ActualWidth));
+        var height = Math.Max(1, (int)Math.Ceiling(viewer.ActualHeight));
+        var bitmap = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(viewer);
+        var pixels = new byte[width * height * 4];
+        bitmap.CopyPixels(pixels, width * 4, 0);
+        var blue = 0;
+        var green = 0;
+        for (var i = 0; i < pixels.Length; i += 4)
+        {
+            var b = pixels[i];
+            var g = pixels[i + 1];
+            var r = pixels[i + 2];
+            if (b > r + 25 && b > g + 10 && b > 90) blue++;
+            if (g > r + 25 && g > b + 10 && g > 90) green++;
+        }
+        var path = Path.Combine(Path.GetTempPath(), "yanzi-code-block.png");
+        using (var stream = File.Create(path))
+        {
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            encoder.Save(stream);
+        }
+        Console.WriteLine("CODE_BLOCK_PNG=" + path + " blue=" + blue + " green=" + green + " size=" + width + "x" + height);
+        Assert("python keywords and comments render in different colors", blue > 12 && green > 8);
+    }
+
+    private static string EditorText(DependencyObject root)
+    {
+        var editor = root.GetType().Name == "TextEditor" ? root : FindNamed(root, "TextEditor");
+        return editor?.GetType().GetProperty("Text")?.GetValue(editor) as string ?? string.Empty;
+    }
+
+    private static DependencyObject? FindNamed(DependencyObject? root, string typeName)
+    {
+        if (root is null)
+            return null;
+        if (root.GetType().Name == typeName)
+            return root;
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is not DependencyObject dep)
+                continue;
+            var found = FindNamed(dep, typeName);
+            if (found is not null)
+                return found;
+        }
+        return null;
+    }
+
+    private static Button? FindButton(DependencyObject root, string content)
+    {
+        if (root is Button button && button.Content as string == content)
+            return button;
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is not DependencyObject dep)
+                continue;
+            var found = FindButton(dep, content);
+            if (found is not null)
+                return found;
+        }
+        return null;
+    }
+
+    private static Border? FindShell(DependencyObject root)
+    {
+        if (root is Border border && border.Tag as string == "AiChatCodeBlock")
+            return border;
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is not DependencyObject dep)
+                continue;
+            var found = FindShell(dep);
+            if (found is not null)
+                return found;
+        }
+        return null;
+    }
+
+    private static void RaiseMouseEnter(UIElement element)
+    {
+        element.RaiseEvent(new System.Windows.Input.MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount)
+        {
+            RoutedEvent = Mouse.MouseEnterEvent,
+            Source = element
+        });
+    }
+
+    private static int CountLogical<T>(DependencyObject root, Func<T, bool> match) where T : DependencyObject
+    {
+        var count = 0;
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is not DependencyObject dep)
+                continue;
+            if (dep is T typed && match(typed))
+                count++;
+            count += CountLogical(dep, match);
+        }
+        return count;
     }
 
     private static void Assert(string name, bool ok)

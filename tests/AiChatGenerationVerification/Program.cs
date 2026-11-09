@@ -90,9 +90,14 @@ internal static class Program
             Assert("assistant bubble has embedded waiting state",
                 list is not null && waiting is not null &&
                 waiting.Attribute("Visibility")?.Value == "{Binding WaitingIndicatorVisibility}");
-            Assert("streaming block contains bound Run and inline caret",
-                streaming is not null && streaming.Elements().Any(e =>
-                e.Name.LocalName == "Run" && e.Attribute("Text")?.Value == "{Binding StreamingText, Mode=OneWay}") &&
+            Assert("one chat wheel notch moves five text lines",
+                list?.Attribute("PreviewMouseWheel")?.Value == "AiChatMessagesList_PreviewMouseWheel" &&
+                Math.Abs(MainWindow.AiChatWheelScrollDistance(120) - 110d) < 0.01 &&
+                Math.Abs(MainWindow.AiChatWheelScrollDistance(-120) + 110d) < 0.01);
+            Assert("streaming block binds emoji-aware text and keeps the inline caret",
+                streaming is not null &&
+                streaming.Attribute(XNamespace.Get("clr-namespace:OpenQuickHost") + "AiChatEmoji.Text")?.Value ==
+                    "{Binding StreamingText, Mode=OneWay}" &&
                 streaming.Descendants().Any(e => e.Name.LocalName == "InlineUIContainer" &&
                     e.Descendants().Any(d => d.Attribute("Style")?.Value ==
                         "{DynamicResource Yanzi.Chat.GenerationCaret}")));

@@ -11,6 +11,7 @@ public static class PersonalSyncProviders
     public const string GitLab = "gitlab";
     public const string Gitea = "gitea";
     public const string S3 = "s3";
+    public const string P2p = "p2p";
 
     public static readonly string[] All =
     [
@@ -20,7 +21,8 @@ public static class PersonalSyncProviders
         GitLab,
         Gitea,
         S3,
-        WebDav
+        WebDav,
+        P2p
     ];
 
     public static string Normalize(string? value)
@@ -33,6 +35,7 @@ public static class PersonalSyncProviders
             Gitea => Gitea,
             S3 => S3,
             WebDav => WebDav,
+            P2p => P2p,
             _ => None
         };
     }
@@ -47,6 +50,7 @@ public static class PersonalSyncProviders
             Gitea => "Gitea",
             S3 => "S3",
             WebDav => "WebDAV",
+            P2p => "P2P 设备直连",
             _ => "未启用"
         };
     }
@@ -71,6 +75,12 @@ public sealed class PersonalSyncSettings
     public PersonalSyncS3Config S3 { get; set; } = new();
 
     public PersonalSyncWebDavConfig WebDav { get; set; } = new();
+
+    public PersonalSyncP2pConfig P2p { get; set; } = new();
+
+    public string SecondaryProvider { get; set; } = PersonalSyncProviders.Gitee;
+
+    public bool EnableSecondaryBackup { get; set; } = true;
 }
 
 public sealed class PersonalSyncGitHubConfig
@@ -292,4 +302,15 @@ public sealed class CloudPersonalSyncConfigSnapshot
             }
         }
     }
+}
+
+public sealed class PersonalSyncP2pConfig
+{
+    public string TargetPeerIp { get; set; } = string.Empty;
+
+    public int Port { get; set; } = 31800;
+
+    public string Token { get; set; } = string.Empty;
+
+    public bool AutoDiscover { get; set; } = true;
 }

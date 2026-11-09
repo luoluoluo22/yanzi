@@ -41,6 +41,7 @@ internal static class PersonalSyncBackendFactory
             PersonalSyncProviders.Gitea when IsGiteaConfigured(sync.Gitea, secrets) => new GiteaPersonalSyncBackend(sync.Gitea, secrets),
             PersonalSyncProviders.S3 when IsS3Configured(sync.S3, secrets) => new S3PersonalSyncBackend(sync.S3, secrets),
             PersonalSyncProviders.WebDav when IsWebDavConfigured(sync.WebDav, secrets) => new WebDavPersonalSyncBackend(sync.WebDav, secrets),
+            PersonalSyncProviders.P2p when IsP2pConfigured(sync.P2p) => new P2pPersonalSyncBackend(sync.P2p),
             _ => null
         };
     }
@@ -61,6 +62,7 @@ internal static class PersonalSyncBackendFactory
             PersonalSyncProviders.Gitea => IsGiteaConfigured(sync.Gitea, secrets),
             PersonalSyncProviders.S3 => IsS3Configured(sync.S3, secrets),
             PersonalSyncProviders.WebDav => IsWebDavConfigured(sync.WebDav, secrets),
+            PersonalSyncProviders.P2p => IsP2pConfigured(sync.P2p),
             _ => false
         };
     }
@@ -114,6 +116,11 @@ internal static class PersonalSyncBackendFactory
                !string.IsNullOrWhiteSpace(config.Username) &&
                !string.IsNullOrWhiteSpace(secrets?.WebDavPassword);
     }
+    public static bool IsP2pConfigured(PersonalSyncP2pConfig? config)
+    {
+        return config != null && (!string.IsNullOrWhiteSpace(config.TargetPeerIp) || config.AutoDiscover);
+    }
+
 }
 
 internal abstract class PersonalSyncBackendBase : IPersonalSyncBackend

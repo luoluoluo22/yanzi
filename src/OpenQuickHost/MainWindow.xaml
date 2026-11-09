@@ -709,6 +709,7 @@
                                 </MenuItem.Icon>
                             </MenuItem>
                             <MenuItem x:Name="PublishExtensionMenuItem"
+                                      Visibility="Collapsed"
                                       Header="发布到商店"
                                       Click="PublishExtensionMenuItem_Click">
                                 <MenuItem.Icon>
@@ -1700,29 +1701,37 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="8"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Height="44"
+                        <Button Grid.Column="0" Height="44" Padding="8,0"
                                 Style="{DynamicResource Yanzi.Button.Outline}"
+                                ToolTip="新建对话"
                                 Click="AiChatNewTopicButton_Click">
-                            <Grid Margin="10,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="8"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <Path Grid.Column="0" Data="{local:IconGeometry plus}"
-                                      Width="16" Height="16" Stretch="Uniform"
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <Path Data="{local:IconGeometry plus}"
+                                      Width="15" Height="15" Stretch="Uniform"
                                       Fill="{DynamicResource Yanzi.Color.Foreground}"
-                                      VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" Text="新建对话" FontSize="14"
+                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="新建对话" FontSize="14"
                                            FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                <ui:YanziKbd Grid.Column="3" KeyText="Ctrl K"
-                                             VerticalAlignment="Center"/>
-                            </Grid>
+                            </StackPanel>
                         </Button>
-                        <Button x:Name="AiChatDetachButton" Grid.Column="2"
+                        <Button x:Name="AiChatNewProjectButton" Grid.Column="2" Height="44" Padding="8,0"
+                                Style="{DynamicResource Yanzi.Button.Outline}"
+                                ToolTip="选择文件，路径会记在这个项目里"
+                                Click="AiChatNewProjectButton_Click">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <Path Data="{local:IconGeometry folder}"
+                                      Width="15" Height="15" Stretch="Uniform"
+                                      Fill="{DynamicResource Yanzi.Color.Foreground}"
+                                      VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="新建项目" FontSize="14"
+                                           FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="AiChatDetachButton" Grid.Column="4"
                                 Width="44" Height="44" MinWidth="0" MinHeight="0" Padding="0"
                                 Style="{DynamicResource Yanzi.Button.Outline}"
                                 ToolTip="分离为任务栏中的独立 AI 对话窗口"
@@ -1778,14 +1787,19 @@
                                                                          Visibility="Collapsed" />
                                                 </Grid>
 
-                                                <TextBlock Grid.Column="1"
-                                                           Margin="4,0,10,0"
-                                                           Text="{Binding Title}"
-                                                           Foreground="{DynamicResource Yanzi.Color.Foreground}"
-                                                           FontSize="{DynamicResource FontSizeNormal}"
-                                                           FontWeight="SemiBold"
-                                                           VerticalAlignment="Center"
-                                                           TextTrimming="CharacterEllipsis" />
+                                                <StackPanel Grid.Column="1" Margin="4,0,10,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Foreground="{DynamicResource Yanzi.Color.Foreground}"
+                                                               FontSize="{DynamicResource FontSizeNormal}"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding ProjectFilesLabel}"
+                                                               Visibility="{Binding ProjectFilesVisibility}"
+                                                               Margin="0,2,0,0"
+                                                               Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
+                                                               FontSize="{DynamicResource FontSizeSmall}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
 
                                                 <Grid Grid.Column="2" MinWidth="36" VerticalAlignment="Center">
                                                     <TextBlock x:Name="TopicUpdatedAt"
@@ -1793,16 +1807,21 @@
                                                                Foreground="{DynamicResource Yanzi.Color.MutedForeground}"
                                                                FontSize="{DynamicResource FontSizeSmall}"
                                                                HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                                    <Button x:Name="TopicEditButton" Visibility="Collapsed"
-                                                            Width="30" Height="30" Padding="0"
+                                                    <!-- Zero-size overlay: the edit button must not change the card height. -->
+                                                    <Canvas Width="0" Height="0"
                                                             HorizontalAlignment="Right"
-                                                            ToolTip="编辑对话（重命名、删除）"
-                                                            Style="{DynamicResource Yanzi.Button.Ghost}"
-                                                            Click="AiChatTopicEditButton_Click">
-                                                        <Path Data="{local:IconGeometry pencil}"
-                                                              Width="16" Height="16" Stretch="Uniform"
-                                                              Fill="{DynamicResource Yanzi.Color.Foreground}"/>
-                                                    </Button>
+                                                            VerticalAlignment="Center">
+                                                        <Button x:Name="TopicEditButton" Visibility="Collapsed"
+                                                                Canvas.Right="0" Canvas.Top="-14"
+                                                                Width="28" Height="28" MinWidth="0" MinHeight="0" Padding="0"
+                                                                ToolTip="编辑对话（重命名、删除）"
+                                                                Style="{DynamicResource Yanzi.Button.Ghost}"
+                                                                Click="AiChatTopicEditButton_Click">
+                                                            <Path Data="{local:IconGeometry pencil}"
+                                                                  Width="15" Height="15" Stretch="Uniform"
+                                                                  Fill="{DynamicResource Yanzi.Color.Foreground}"/>
+                                                        </Button>
+                                                    </Canvas>
                                                 </Grid>
                                             </Grid>
                                         </Border>
@@ -1817,7 +1836,7 @@
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding IsMouseOver, ElementName=TopicItem}" Value="True">
                                                 <Setter TargetName="TopicEditButton" Property="Visibility" Value="Visible"/>
-                                                <Setter TargetName="TopicUpdatedAt" Property="Visibility" Value="Collapsed"/>
+                                                <Setter TargetName="TopicUpdatedAt" Property="Opacity" Value="0"/>
                                             </DataTrigger>
                                         </DataTemplate.Triggers>
                                     </DataTemplate>
@@ -1877,6 +1896,7 @@
                                 </Grid.RowDefinitions>
                                 <ListBox x:Name="AiChatMessagesList" Grid.Row="0"
                                          ItemsSource="{Binding AiChatMessages}"
+                                         PreviewMouseWheel="AiChatMessagesList_PreviewMouseWheel"
                                          Padding="18,18,14,18" Background="Transparent" BorderThickness="0"
                                          ScrollViewer.CanContentScroll="True"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -1973,8 +1993,8 @@
                                                                                Foreground="{DynamicResource Yanzi.Color.Foreground}"
                                                                                FontFamily="Segoe UI, Microsoft YaHei"
                                                                                FontSize="{DynamicResource Yanzi.Font.Body}"
-                                                                               LineHeight="22">
-                                                                        <Run Text="{Binding StreamingText, Mode=OneWay}" />
+                                                                               LineHeight="22"
+                                                                               local:AiChatEmoji.Text="{Binding StreamingText, Mode=OneWay}">
                                                                         <InlineUIContainer BaselineAlignment="Center">
                                                                             <Border Style="{DynamicResource Yanzi.Chat.GenerationCaret}" />
                                                                         </InlineUIContainer>
@@ -2131,7 +2151,7 @@
                                                                 Style="{DynamicResource Yanzi.Chat.UserBubble}"
                                                                 MouseRightButtonUp="AiChatMessageBubble_MouseRightButtonUp">
                                                             <StackPanel>
-                                                                <TextBlock Text="{Binding Text}"
+                                                                <TextBlock local:AiChatEmoji.Text="{Binding Text}"
                                                                            Foreground="{DynamicResource Yanzi.Color.ChatUserForeground}"
                                                                            FontFamily="Segoe UI, Microsoft YaHei"
                                                                            FontSize="{DynamicResource Yanzi.Font.Body}"

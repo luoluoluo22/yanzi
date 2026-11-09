@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -107,7 +107,7 @@ public static class ExtensionPackageService
                 entry.LastWriteTime = fixedTimestamp;
                 
                 using var entryStream = entry.Open();
-                using var fileStream = File.OpenRead(filePath);
+                using var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 fileStream.CopyTo(entryStream);
             }
             ExtensionGitSafety.AddProvenance(archive, directoryPath);

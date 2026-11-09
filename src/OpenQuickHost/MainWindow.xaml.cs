@@ -261,6 +261,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _authPromptActive;
     private bool _isPinned;
     private int _nextExtensionHotkeyId = 0x5400;
+    private string _installedApplicationFingerprint = string.Empty;
     private QuickPanelWindow? _quickPanel;
     private RadialMenuWindow? _radialMenu;
     public RadialMenuWindow? RadialMenuInstance => _radialMenu;
@@ -462,7 +463,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _allCommands = CreateSeedCommands();
         _allCommands.AddRange(LocalExtensionCatalog.LoadCommands());
-        _allCommands.AddRange(CreateInstalledApplicationCommands());
+        var cachedApplications = InstalledApplicationCache.TryLoad();
+        if (cachedApplications.Count > 0)
+        {
+            var cacheClock = System.Diagnostics.Stopwatch.StartNew();
+            _installedApplicationFingerprint = InstalledApplicationCache.Fingerprint(cachedApplications);
+            _allCommands.AddRange(CreateInstalledApplicationCommands(cachedApplications));
+            HostAssets.AppendLog(
+                $"ApplicationCatalog timing: phase=cache-load count={cachedApplications.Count} elapsedMs={cacheClock.ElapsedMilliseconds}");
+        }
+        else
+        {
+            HostAssets.AppendLog("ApplicationCatalog timing: phase=cache-miss");
+        }
         SyncNewlyDiscoveredLocalExtensions(_allCommands);
 
         var customShortcuts = AppSettingsStore.Load().CustomCommandShortcuts ?? new(StringComparer.OrdinalIgnoreCase);
@@ -825,9 +838,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     case SearchScopeCapability:
                         yield return new SearchScopeTab(SearchScopeCapability, "能力", "搜索和查看已注册能力的调用信息");
                         break;
-                    case SearchScopeStore:
-                        yield return new SearchScopeTab(SearchScopeStore, $"{BrandTerms.Current.MiniApp}商店", $"浏览与安装云端{BrandTerms.Current.MiniApp}");
-                        break;
+                    // case SearchScopeStore: 小程序市场已下线，不展示商店Tab
                 }
             }
             else
@@ -1346,7 +1357,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _githubSecondaryBackupTimer.Start();
         _ = Task.Run(async () =>
             await GitHubSecondaryBackupService.RunIfDueAsync(AppSettingsStore.Load()));
-        _ = LoadInstalledApplicationsAsync();
         _windowBoundExtensionsService.Start(_appSettings.WindowBindings);
         if (_appSettings.EnableWindowSnapAssist)
         {
@@ -1414,9 +1424,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        _ = LoadInstalledApplicationsAsync();
         InitializeBackgroundServices();
         SearchBox.Focus();
         SetSearchScopePopupOpen(true);
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
+        {
+            CommandItem.IconResolutionEnabled = true;
+            foreach (var command in _allCommands)
+            {
+                command.ReleaseDeferredIcon();
+            }
+        });
     }
 
     private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -3075,20 +3094,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditExtensionMenuItem.IsEnabled = isExtensionLike;
         EditExtensionMenuItem.Header = isYanyuRule ? "编辑燕语" : "编辑小程序";
 
-        PublishExtensionMenuItem.Visibility = (isLocalExtension && !isYanyuRule) ? Visibility.Visible : Visibility.Collapsed;
-        PublishExtensionMenuItem.IsEnabled = isLocalExtension && _cloudSyncClient != null;
-        PublishExtensionMenuItem.Header = (resolved.IsPublishedInStore) ? "更新到商店" : "发布到商店";
-
-        // 仅当小程序已发布在商店时才显示【商店链接】二级菜单，未发布坚决隐藏！
-        var hasStoreShareActions = isLocalExtension && resolved.IsPublishedInStore;
-        StoreShareMenu.Visibility = hasStoreShareActions ? Visibility.Visible : Visibility.Collapsed;
-        StoreShareMenu.IsEnabled = isLocalExtension && hasStoreShareActions;
-
-        CopyExtensionStoreLinkMenuItem.Visibility = hasStoreShareActions ? Visibility.Visible : Visibility.Collapsed;
-        CopyExtensionStoreLinkMenuItem.IsEnabled = isLocalExtension && hasStoreShareActions;
-
-        OpenExtensionStoreLinkMenuItem.Visibility = (hasStoreShareActions && !isYanyuRule) ? Visibility.Visible : Visibility.Collapsed;
-        OpenExtensionStoreLinkMenuItem.IsEnabled = isLocalExtension && hasStoreShareActions;
+        PublishExtensionMenuItem.Visibility = Visibility.Collapsed;
+        PublishExtensionMenuItem.IsEnabled = false;
+        StoreShareMenu.Visibility = Visibility.Collapsed;
+        StoreShareMenu.IsEnabled = false;
+        CopyExtensionStoreLinkMenuItem.Visibility = Visibility.Collapsed;
+        CopyExtensionStoreLinkMenuItem.IsEnabled = false;
+        OpenExtensionStoreLinkMenuItem.Visibility = Visibility.Collapsed;
+        OpenExtensionStoreLinkMenuItem.IsEnabled = false;
 
         DeleteExtensionMenuItem.Visibility = isExtensionLike ? Visibility.Visible : Visibility.Collapsed;
         DeleteExtensionMenuItem.IsEnabled = isExtensionLike;
@@ -3355,21 +3368,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (command.Source == CommandSource.LocalExtension)
         {
             AddMenuItem(menu, "编辑小程序", "pen", async () => await EditSelectedExtensionAsync(), true);
-            if (_cloudSyncClient != null)
-            {
-                AddMenuItem(menu, command.IsPublishedInStore ? "更新到商店" : "发布到商店", "publish", async () =>
-                {
-                    var ok = await PublishSelectedExtensionAsync();
-                    if (!ok)
-                    {
-                        SyncStatus = string.IsNullOrWhiteSpace(SyncStatus) ? (command.IsPublishedInStore ? "更新到商店失败。" : "发布到商店失败。") : SyncStatus;
-                    }
-                }, true);
-            }
-            if (command.IsPublishedInStore)
-            {
-                AddMenuItem(menu, "打开商店链接", "link", () => OpenExtensionStoreLinkMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
-            }
+            // 小程序市场已下线，不再显示发布到商店或商店链接
             AddMenuItem(menu, "删除", "delete", async () => await DeleteSelectedExtensionAsync(), true);
             menu.Items.Add(new Separator());
             AddMenuItem(menu, "复制小程序", "copy", () => CopyExtensionMenuItem_Click(CreateMenuSender(command), new RoutedEventArgs()), true);
@@ -4079,11 +4078,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             iconSourceOverride: NativeFileIconService.GetSystemCommandIcon(openTarget, extensionId));
     }
 
-    private static List<CommandItem> CreateInstalledApplicationCommands()
+    private static List<CommandItem> CreateInstalledApplicationCommands(IReadOnlyList<InstalledApplicationEntry> scannedEntries)
     {
         try
         {
-            var entries = InstalledApplicationCatalog.Load().ToList();
+            var entries = scannedEntries.ToList();
             var installedKnownIds = entries
                 .Select(static entry => entry.ExtensionId)
                 .Where(static id => KnownApplicationCatalog.TryGetByExtensionId(id, out _))
@@ -4158,7 +4157,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     iconReference: isInstallPlaceholder ? "mdi:download" : entry.IconPath,
                     launchArguments: entry.Arguments,
                     workingDirectory: entry.WorkingDirectory,
-                    globalShortcut: shortcut);
+                    globalShortcut: shortcut,
+                    deferIconResolution: true);
                 if (!isInstallPlaceholder)
                 {
                     item.IsStartupEnabled = startupSnapshot.IsStartup(entry.LaunchTarget, entry.Title);
@@ -4184,21 +4184,52 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private Task LoadInstalledApplicationsAsync()
     {
+        var fingerprintAtStart = _installedApplicationFingerprint;
+        var hadApplications = _allCommands.Any(static command => command.Source == CommandSource.Application);
         return Task.Run(() =>
         {
-            var commands = CreateInstalledApplicationCommands();
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            List<InstalledApplicationEntry> scanned;
+            try
+            {
+                scanned = InstalledApplicationCatalog.Load().ToList();
+            }
+            catch (Exception ex)
+            {
+                HostAssets.AppendLog($"InstalledApplicationCatalog.Load failed: {ex.Message}");
+                return;
+            }
+
+            var fingerprint = InstalledApplicationCache.Fingerprint(scanned);
+            var scanMs = clock.ElapsedMilliseconds;
+            if (fingerprint == fingerprintAtStart && hadApplications)
+            {
+                HostAssets.AppendLog(
+                    $"ApplicationCatalog timing: phase=background-scan elapsedMs={scanMs} changed=false count={scanned.Count}");
+                return;
+            }
+
+            var commands = CreateInstalledApplicationCommands(scanned);
+            InstalledApplicationCache.Save(scanned);
             Dispatcher.InvokeAsync(() =>
             {
                 if (commands.Count == 0)
                 {
+                    HostAssets.AppendLog(
+                        $"ApplicationCatalog timing: phase=background-scan elapsedMs={scanMs} changed=false count=0");
                     return;
                 }
+
+                _installedApplicationFingerprint = fingerprint;
                 _allCommands.RemoveAll(x => x.Source == CommandSource.Application);
                 _allCommands.AddRange(commands);
                 RefreshExtensionHotkeys();
+                ApplyFilter(SearchBox.Text);
                 OnPropertyChanged(nameof(VisibleCountText));
                 OnPropertyChanged(nameof(FooterHint));
                 _quickPanel?.LoadSlots();
+                HostAssets.AppendLog(
+                    $"ApplicationCatalog timing: phase=background-scan elapsedMs={scanMs} changed=true count={scanned.Count}");
             }, DispatcherPriority.Background);
         });
     }
@@ -5397,9 +5428,12 @@ internal static class AccentBrushCache
 
 public sealed class CommandItem : INotifyPropertyChanged
 {
+    internal static bool IconResolutionEnabled { get; set; }
+
     private string? _queryPreviewSubtitle;
     private string? _queryPreviewActionLabel;
     private ImageSource? _iconSource;
+    private bool _iconReady;
     private bool _hasNewBadge;
     private bool _isCSharpPrebuilding;
 
@@ -5438,7 +5472,8 @@ public sealed class CommandItem : INotifyPropertyChanged
         bool isPublishedInStore = false,
         bool toggleWindow = true,
         bool runAsAdmin = false,
-        bool waitForExit = true)
+        bool waitForExit = true,
+        bool deferIconResolution = false)
     {
         Glyph = glyph;
         Title = title;
@@ -5468,22 +5503,14 @@ public sealed class CommandItem : INotifyPropertyChanged
         EntryMode = entryMode;
         InlineScriptSource = inlineScriptSource;
         IconReference = iconReference;
-        _iconSource = iconSourceOverride ?? ExtensionIconLibrary.ResolveImageSource(iconReference, extensionDirectoryPath);
-        if (_iconSource == null && !string.IsNullOrWhiteSpace(openTarget))
+        if (iconSourceOverride != null)
         {
-            _iconSource = ExtensionIconLibrary.ResolveImageSource(openTarget, extensionDirectoryPath);
+            _iconSource = iconSourceOverride;
+            _iconReady = true;
         }
-
-        // 如果该小程序的目标是桌面或下载，且未配置明确的外部自定义图片文件（即无图标或仅为通用/mdi 图标），自动优先呈现系统原生高品质图标
-        if ((NativeFileIconService.IsDesktopTarget(openTarget) || NativeFileIconService.IsDesktopTarget(iconReference))
-            && (string.IsNullOrWhiteSpace(iconReference) || iconReference.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) || iconReference.StartsWith("stock:", StringComparison.OrdinalIgnoreCase) || iconReference.Equals("shell:Desktop", StringComparison.OrdinalIgnoreCase)))
+        else if (!deferIconResolution)
         {
-            _iconSource = NativeFileIconService.GetDesktopIcon();
-        }
-        else if ((NativeFileIconService.IsDownloadsTarget(openTarget) || NativeFileIconService.IsDownloadsTarget(iconReference))
-            && (string.IsNullOrWhiteSpace(iconReference) || iconReference.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) || iconReference.StartsWith("stock:", StringComparison.OrdinalIgnoreCase) || iconReference.Equals("shell:Downloads", StringComparison.OrdinalIgnoreCase)))
-        {
-            _iconSource = NativeFileIconService.GetDownloadsIcon();
+            EnsureIcon();
         }
 
         VectorIcon = ExtensionIconLibrary.ResolveVectorIcon(iconReference);
@@ -5513,9 +5540,46 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public string? IconReference { get; }
 
-    public ImageSource? IconSource => _iconSource;
+    public ImageSource? IconSource
+    {
+        get
+        {
+            if (!_iconReady && IconResolutionEnabled)
+            {
+                EnsureIcon();
+            }
+
+            return _iconSource;
+        }
+    }
 
     public Geometry? VectorIcon { get; }
+
+    private void EnsureIcon()
+    {
+        if (_iconReady)
+        {
+            return;
+        }
+
+        _iconReady = true;
+        _iconSource = ExtensionIconLibrary.ResolveImageSource(IconReference, ExtensionDirectoryPath);
+        if (_iconSource == null && !string.IsNullOrWhiteSpace(OpenTarget))
+        {
+            _iconSource = ExtensionIconLibrary.ResolveImageSource(OpenTarget, ExtensionDirectoryPath);
+        }
+
+        if ((NativeFileIconService.IsDesktopTarget(OpenTarget) || NativeFileIconService.IsDesktopTarget(IconReference))
+            && (string.IsNullOrWhiteSpace(IconReference) || IconReference.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) || IconReference.StartsWith("stock:", StringComparison.OrdinalIgnoreCase) || IconReference.Equals("shell:Desktop", StringComparison.OrdinalIgnoreCase)))
+        {
+            _iconSource = NativeFileIconService.GetDesktopIcon();
+        }
+        else if ((NativeFileIconService.IsDownloadsTarget(OpenTarget) || NativeFileIconService.IsDownloadsTarget(IconReference))
+            && (string.IsNullOrWhiteSpace(IconReference) || IconReference.StartsWith("mdi:", StringComparison.OrdinalIgnoreCase) || IconReference.StartsWith("stock:", StringComparison.OrdinalIgnoreCase) || IconReference.Equals("shell:Downloads", StringComparison.OrdinalIgnoreCase)))
+        {
+            _iconSource = NativeFileIconService.GetDownloadsIcon();
+        }
+    }
 
     public System.Windows.Media.Brush VectorIconBrush { get; }
 
@@ -5856,8 +5920,22 @@ public sealed class CommandItem : INotifyPropertyChanged
 
     public bool HasQueryPreview { get; private set; }
 
+    public void ReleaseDeferredIcon()
+    {
+        if (_iconReady || !IconResolutionEnabled)
+        {
+            return;
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IconSource)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasImageIcon)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasVectorIcon)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(UseGlyphIcon)));
+    }
+
     public void SetIconSource(ImageSource? iconSource)
     {
+        _iconReady = true;
         if (ReferenceEquals(_iconSource, iconSource))
         {
             return;

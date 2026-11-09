@@ -48,7 +48,8 @@
                           Margin="10"
                           Background="Transparent"
                           BorderThickness="0"
-                          Foreground="{DynamicResource BrushTextMain}">
+                          Foreground="{DynamicResource BrushTextMain}"
+                          PreviewMouseRightButtonUp="ExtensionListView_PreviewMouseRightButtonUp">
                     <ListView.View>
                         <GridView>
                             <GridViewColumn Header="名称" Width="210">
@@ -171,6 +172,6 @@
         <TextBlock Grid.Row="2"
                    Margin="4,12,0,0"
                    Foreground="{DynamicResource BrushTextMuted}"
-                   Text="展示当前持续运行的小程序；“宿主内”表示与燕子共享进程，均可随时结束。" />
+                   Text="展示当前持续运行的小程序；“宿主内”表示与燕子共享进程，均可随时结束。在某一行上右键可以编辑该小程序。" />
     </Grid>
 </Window>

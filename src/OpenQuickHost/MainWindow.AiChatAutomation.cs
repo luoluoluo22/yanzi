@@ -35,11 +35,18 @@ public sealed class AiConversationSchedule
     public DateTimeOffset? LastRunAt { get; set; }
     public string LastStatus { get; set; } = "未运行";
 
-    public override string ToString() =>
-        (Enabled ? "● " : "○ ") + Name + " · " +
-        (RepeatDaily ? "每天 " : "单次 ") +
-        NextRunAt.ToLocalTime().ToString("MM-dd HH:mm") +
-        "\n    " + LastStatus;
+    public string ListSummary
+    {
+        get
+        {
+            var when = RepeatDaily
+                ? "每天 " + NextRunAt.ToLocalTime().ToString("HH:mm")
+                : "单次 " + NextRunAt.ToLocalTime().ToString("MM-dd HH:mm");
+            return when + " · " + (Enabled ? LastStatus : "已暂停");
+        }
+    }
+
+    public override string ToString() => Name + " · " + ListSummary;
 }
 
 // Hosted by MainWindow (the resident tray process), never by the chat window.
@@ -50,6 +57,7 @@ public partial class MainWindow
     private int _aiChatOriginalIndex;
     private Window? _aiScheduleManagementWindow;
     private ListBox? _aiScheduleList;
+    private Action<AiConversationSchedule>? _refreshAiScheduleDetail;
     private readonly List<AiConversationSchedule> _aiSchedules = [];
     private readonly DispatcherTimer _aiScheduleTimer =
         new() { Interval = TimeSpan.FromSeconds(15) };
@@ -313,6 +321,7 @@ public partial class MainWindow
             RefreshAiTopicRequestState();
             SaveAiConversationSchedules();
             _aiScheduleList?.Items.Refresh();
+            _refreshAiScheduleDetail?.Invoke(task);
         }
     }
 
@@ -327,52 +336,150 @@ public partial class MainWindow
         var window = new Window
         {
             Title = "燕子 · AI 定时任务",
-            Width = 690, Height = 710,
-            MinWidth = 560, MinHeight = 580,
+            Width = 960, Height = 640,
+            MinWidth = 820, MinHeight = 520,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
             ShowInTaskbar = true,
-            Icon = CreateAiChatIcon(),
-            Background = new SolidColorBrush(Color.FromRgb(28, 30, 39)),
-            Foreground = Brushes.White
+            Icon = CreateAiChatIcon()
         };
         AiChatTaskbarIdentity.Attach(window);
         Yanzi.UI.Wpf.YanziUi.ApplyTo(window,
             string.Equals(AppSettingsStore.Load().ThemeMode, "Light",
                 StringComparison.OrdinalIgnoreCase)
                 ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
-        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        var form = new StackPanel { Margin = new Thickness(20) };
-        scroll.Content = form;
-        window.Content = scroll;
+        window.SetResourceReference(Window.BackgroundProperty, "Yanzi.Color.Background");
+        window.SetResourceReference(Window.ForegroundProperty, "Yanzi.Color.Foreground");
+        window.SetResourceReference(System.Windows.Documents.TextElement.FontFamilyProperty, "Yanzi.Font.Geist");
+        window.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "Yanzi.Color.Foreground");
+        void UseSharedScrollbar(FrameworkElement element)
+        {
+            if (window.TryFindResource(Yanzi.UI.Wpf.YanziUi.Styles.Scrollbar) is Style scrollbar)
+                element.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = scrollbar;
+        }
+        var root = new Grid { Margin = new Thickness(20) };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.Children.Add(Yanzi.UI.Wpf.YanziUi.WithStyle(new TextBlock
+        {
+            Text = "宿主在后台运行时仍会触发定时会话；退出程序或关机后不会运行。重启时检查已到期任务。"
+        }, Yanzi.UI.Wpf.YanziUi.Styles.TextSecondary));
+        var body = new Grid { Margin = new Thickness(0, 14, 0, 0) };
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(body, 1);
+        root.Children.Add(body);
+        window.Content = root;
 
-        form.Children.Add(new TextBlock
+        var sidebar = Yanzi.UI.Wpf.YanziUi.WithStyle(new Border { Padding = new Thickness(12) },
+            "Yanzi.Chat.Sidebar");
+        var side = new Grid();
+        side.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        side.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        side.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var sideTitle = new TextBlock
         {
-            Text = "宿主在后台运行时仍会触发定时会话；退出程序或关机后不会运行。重启时检查已到期任务。",
-            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12)
-        });
-        var list = new ListBox
-        {
-            ItemsSource = _aiSchedules, Height = 160,
-            Margin = new Thickness(0, 0, 0, 12)
+            Text = "任务", FontSize = 16, FontWeight = FontWeights.SemiBold
         };
+        sideTitle.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.Foreground");
+        side.Children.Add(sideTitle);
+        var create = Yanzi.UI.Wpf.YanziUi.WithStyle(new Button
+        {
+            Content = "新建任务",
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 12, 0, 8)
+        }, Yanzi.UI.Wpf.YanziUi.Styles.DefaultButton);
+        Grid.SetRow(create, 1);
+        side.Children.Add(create);
+        var list = Yanzi.UI.Wpf.YanziUi.WithStyle(new ListBox
+        {
+            ItemsSource = _aiSchedules,
+            ItemTemplate = ScheduleItemTemplate(),
+            BorderThickness = new Thickness(0)
+        }, Yanzi.UI.Wpf.YanziUi.Styles.List);
+        list.SetResourceReference(System.Windows.Controls.Control.BackgroundProperty, "Yanzi.Color.Transparent");
+        ScrollViewer.SetHorizontalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
+        UseSharedScrollbar(list);
+        var listEmpty = Yanzi.UI.Wpf.YanziUi.WithStyle(new TextBlock
+        {
+            Text = "还没有任务",
+            Margin = new Thickness(4, 6, 0, 0),
+            VerticalAlignment = VerticalAlignment.Top,
+            IsHitTestVisible = false
+        }, Yanzi.UI.Wpf.YanziUi.Styles.TextSecondary);
+        var listHost = new Grid();
+        listHost.Children.Add(list);
+        listHost.Children.Add(listEmpty);
+        Grid.SetRow(listHost, 2);
+        side.Children.Add(listHost);
+        sidebar.Child = side;
+        body.Children.Add(sidebar);
         _aiScheduleList = list;
-        form.Children.Add(list);
 
-        void Label(string text) => form.Children.Add(
-            new TextBlock { Text = text, Margin = new Thickness(0, 7, 0, 3) });
+        var detailCard = Yanzi.UI.Wpf.YanziUi.WithStyle(new Border { Padding = new Thickness(18) },
+            "Yanzi.Chat.Transcript");
+        var detailGrid = new Grid();
+        detailCard.Child = detailGrid;
+        var empty = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            MaxWidth = 360
+        };
+        var emptyTitle = new TextBlock
+        {
+            Text = "选择左侧任务", FontSize = 18, FontWeight = FontWeights.SemiBold,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center
+        };
+        emptyTitle.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.Foreground");
+        empty.Children.Add(emptyTitle);
+        empty.Children.Add(Yanzi.UI.Wpf.YanziUi.WithStyle(new TextBlock
+        {
+            Text = "点击任务可查看并修改详情。\n点「新建任务」添加一条定时消息。",
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+            Margin = new Thickness(0, 8, 0, 0)
+        }, Yanzi.UI.Wpf.YanziUi.Styles.TextSecondary));
+        detailGrid.Children.Add(empty);
+        var editor = new Grid();
+        editor.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        editor.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var editorScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        UseSharedScrollbar(editorScroll);
+        var form = new StackPanel();
+        editorScroll.Content = form;
+        editor.Children.Add(editorScroll);
+        var actions = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
+        Grid.SetRow(actions, 1);
+        editor.Children.Add(actions);
+        editor.Visibility = Visibility.Collapsed;
+        detailGrid.Children.Add(editor);
+        Grid.SetColumn(detailCard, 2);
+        body.Children.Add(detailCard);
+        var heading = new TextBlock
+        {
+            Text = "新建任务", FontSize = 18, FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        heading.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.Foreground");
+        form.Children.Add(heading);
+
+        void Label(string text)
+        {
+            var label = new TextBlock { Text = text, Margin = new Thickness(0, 7, 0, 3) };
+            label.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.Foreground");
+            form.Children.Add(label);
+        }
         Label("任务名称");
-        var name = new TextBox { Height = 32, Padding = new Thickness(6) };
+        var name = Yanzi.UI.Wpf.YanziUi.WithStyle(new TextBox(), Yanzi.UI.Wpf.YanziUi.Styles.Input);
         form.Children.Add(name);
         Label("定时发送的消息");
-        var prompt = new TextBox
-        {
-            Height = 78, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Padding = new Thickness(6)
-        };
+        var prompt = Yanzi.UI.Wpf.YanziUi.WithStyle(new TextBox { Height = 96 },
+            Yanzi.UI.Wpf.YanziUi.Styles.Textarea);
+        UseSharedScrollbar(prompt);
         form.Children.Add(prompt);
         Label("选择目标会话");
-        var topics = new ComboBox { Height = 33 };
+        var topics = Yanzi.UI.Wpf.YanziUi.WithStyle(new ComboBox(), Yanzi.UI.Wpf.YanziUi.Styles.Select);
         void RefreshTopics()
         {
             topics.Items.Clear();
@@ -386,20 +493,22 @@ public partial class MainWindow
 
         Label("执行日期与时间（本机时区）");
         var timeLine = new StackPanel { Orientation = Orientation.Horizontal };
-        var date = new DatePicker
+        var date = new Yanzi.UI.Wpf.YanziDatePicker
         {
-            Width = 160, Height = 33, SelectedDate = DateTime.Today.AddDays(1)
+            Width = 210, SelectedDate = DateTime.Today.AddDays(1),
+            VerticalAlignment = VerticalAlignment.Center
         };
-        var time = new TextBox
+        var time = Yanzi.UI.Wpf.YanziUi.WithStyle(new TextBox
         {
-            Width = 80, Height = 33, Text = "09:00",
-            Margin = new Thickness(12, 0, 0, 0), Padding = new Thickness(6)
-        };
-        var repeat = new CheckBox
+            Width = 88, Text = "09:00",
+            Margin = new Thickness(12, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        }, Yanzi.UI.Wpf.YanziUi.Styles.Input);
+        var repeat = Yanzi.UI.Wpf.YanziUi.WithStyle(new CheckBox
         {
             Content = "每天重复", VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(15, 0, 0, 0)
-        };
+        }, Yanzi.UI.Wpf.YanziUi.Styles.CheckBoxPreview);
         timeLine.Children.Add(date);
         timeLine.Children.Add(time);
         timeLine.Children.Add(repeat);
@@ -408,11 +517,45 @@ public partial class MainWindow
         {
             Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap
         };
+        status.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.MutedForeground");
         form.Children.Add(status);
 
-        list.SelectionChanged += (_, _) =>
+        var drafting = false;
+        Button save = null!;
+        StackPanel existingActions = null!;
+        void UpdateListEmpty() =>
+            listEmpty.Visibility = _aiSchedules.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        string Describe(AiConversationSchedule task)
         {
-            if (list.SelectedItem is not AiConversationSchedule task) return;
+            var run = task.LastRunAt == null ? "尚未执行" :
+                task.LastRunAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            return (task.Enabled ? "启用" : "已暂停") + " · 上次 " + run + " · " + task.LastStatus;
+        }
+        void ShowEmpty()
+        {
+            drafting = false;
+            editor.Visibility = Visibility.Collapsed;
+            empty.Visibility = Visibility.Visible;
+        }
+        void ShowEditor(AiConversationSchedule? task)
+        {
+            drafting = task == null;
+            empty.Visibility = Visibility.Collapsed;
+            editor.Visibility = Visibility.Visible;
+            heading.Text = task == null ? "新建任务" : "任务详情";
+            save.Content = task == null ? "创建任务" : "保存修改";
+            existingActions.Visibility = task == null ? Visibility.Collapsed : Visibility.Visible;
+            if (task == null)
+            {
+                name.Clear();
+                prompt.Clear();
+                date.SelectedDate = DateTime.Today.AddDays(1);
+                time.Text = "09:00";
+                repeat.IsChecked = false;
+                RefreshTopics();
+                status.Text = "创建后会出现在左侧列表。";
+                return;
+            }
             name.Text = task.Name;
             prompt.Text = task.Prompt;
             date.SelectedDate = task.NextRunAt.LocalDateTime.Date;
@@ -420,31 +563,36 @@ public partial class MainWindow
             repeat.IsChecked = task.RepeatDaily;
             RefreshTopics();
             foreach (ComboBoxItem option in topics.Items)
-                if (string.Equals(option.Tag as string, task.TopicId,
-                    StringComparison.Ordinal))
+                if (string.Equals(option.Tag as string, task.TopicId, StringComparison.Ordinal))
                 {
                     topics.SelectedItem = option;
                     break;
                 }
-            status.Text = task.LastRunAt == null ? task.LastStatus :
-                task.LastRunAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") +
-                " · " + task.LastStatus;
+            status.Text = Describe(task);
+        }
+        list.SelectionChanged += (_, _) =>
+        {
+            if (list.SelectedItem is AiConversationSchedule task) ShowEditor(task);
+            else if (!drafting) ShowEmpty();
+        };
+        create.Click += (_, _) =>
+        {
+            drafting = true;
+            if (list.SelectedItem != null) list.SelectedItem = null;
+            ShowEditor(null);
         };
 
-        var actions = new WrapPanel { Margin = new Thickness(0, 14, 0, 0) };
-        form.Children.Add(actions);
-        void Action(string title, Action callback)
+        Button MakeButton(string title, string styleKey, Action callback)
         {
-            var button = new Button
+            var button = Yanzi.UI.Wpf.YanziUi.WithStyle(new Button
             {
-                Content = title, Height = 35, MinWidth = 90,
-                Margin = new Thickness(0, 0, 8, 8), Padding = new Thickness(9, 0, 9, 0)
-            };
+                Content = title, MinWidth = 96,
+                Margin = new Thickness(0, 0, 8, 0)
+            }, styleKey);
             button.Click += (_, _) => callback();
-            actions.Children.Add(button);
+            return button;
         }
-
-        Action("新增 / 保存", () =>
+        save = MakeButton("创建任务", Yanzi.UI.Wpf.YanziUi.Styles.DefaultButton, () =>
         {
             if (string.IsNullOrWhiteSpace(name.Text) ||
                 string.IsNullOrWhiteSpace(prompt.Text))
@@ -463,58 +611,82 @@ public partial class MainWindow
             {
                 status.Text = "下次执行时间必须晚于现在"; return;
             }
-            var task = list.SelectedItem as AiConversationSchedule
-                ?? new AiConversationSchedule();
+            var task = list.SelectedItem as AiConversationSchedule;
+            var isNew = task == null;
+            task ??= new AiConversationSchedule();
             task.Name = name.Text.Trim();
             task.Prompt = prompt.Text.Trim();
             task.TopicId = (topics.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
             task.NextRunAt = next;
             task.RepeatDaily = repeat.IsChecked == true;
-            task.Enabled = true;
-            task.LastStatus = "等待执行";
-            if (!_aiSchedules.Contains(task)) _aiSchedules.Add(task);
+            if (isNew) task.Enabled = true;
+            if (isNew || task.Enabled) task.LastStatus = "等待执行";
+            if (isNew) _aiSchedules.Add(task);
             SaveAiConversationSchedules();
             list.Items.Refresh();
+            UpdateListEmpty();
             list.SelectedItem = task;
             status.Text = "任务已保存，后台调度已生效";
         });
-        Action("暂停 / 恢复", () =>
+        existingActions = new StackPanel { Orientation = Orientation.Horizontal };
+        existingActions.Children.Add(MakeButton("暂停 / 恢复", Yanzi.UI.Wpf.YanziUi.Styles.OutlineButton, () =>
         {
             if (list.SelectedItem is not AiConversationSchedule task) return;
             task.Enabled = !task.Enabled;
             SaveAiConversationSchedules();
             list.Items.Refresh();
-            status.Text = task.Enabled ? "已恢复" : "已暂停";
-        });
-        Action("立即执行", () =>
+            status.Text = Describe(task);
+        }));
+        existingActions.Children.Add(MakeButton("立即执行", Yanzi.UI.Wpf.YanziUi.Styles.OutlineButton, () =>
         {
             if (list.SelectedItem is not AiConversationSchedule task) return;
             _ = RunAiScheduleSafeAsync(task, manual: true);
             status.Text = "已发起，不会修改下次定时执行时间";
-        });
-        Action("删除", () =>
+        }));
+        existingActions.Children.Add(MakeButton("删除", Yanzi.UI.Wpf.YanziUi.Styles.DestructiveButton, () =>
         {
             if (list.SelectedItem is not AiConversationSchedule task) return;
             _aiSchedules.Remove(task);
             SaveAiConversationSchedules();
+            list.SelectedItem = null;
             list.Items.Refresh();
-            status.Text = "已删除";
-        });
-        Action("清空表单", () =>
-        {
-            list.SelectedItem = null; name.Clear(); prompt.Clear();
-            date.SelectedDate = DateTime.Today.AddDays(1);
-            time.Text = "09:00"; repeat.IsChecked = false;
-            RefreshTopics(); status.Text = "";
-        });
+            UpdateListEmpty();
+            ShowEmpty();
+        }));
+        actions.Children.Add(save);
+        actions.Children.Add(existingActions);
 
+        _refreshAiScheduleDetail = finished =>
+        {
+            if (ReferenceEquals(list.SelectedItem, finished)) status.Text = Describe(finished);
+        };
+        UpdateListEmpty();
+        ShowEmpty();
         _aiScheduleManagementWindow = window;
         window.Closed += (_, _) =>
         {
             _aiScheduleManagementWindow = null;
             _aiScheduleList = null;
+            _refreshAiScheduleDetail = null;
         };
         window.Show();
         window.Activate();
+    }
+
+    private static DataTemplate ScheduleItemTemplate()
+    {
+        var name = new FrameworkElementFactory(typeof(TextBlock));
+        name.SetBinding(TextBlock.TextProperty, new Binding(nameof(AiConversationSchedule.Name)));
+        name.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+        name.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        var summary = new FrameworkElementFactory(typeof(TextBlock));
+        summary.SetBinding(TextBlock.TextProperty, new Binding(nameof(AiConversationSchedule.ListSummary)));
+        summary.SetValue(TextBlock.FontSizeProperty, 12.0);
+        summary.SetValue(TextBlock.MarginProperty, new Thickness(0, 2, 0, 0));
+        summary.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis);
+        var stack = new FrameworkElementFactory(typeof(StackPanel));
+        stack.AppendChild(name);
+        stack.AppendChild(summary);
+        return new DataTemplate { VisualTree = stack };
     }
 }

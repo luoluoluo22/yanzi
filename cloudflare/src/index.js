@@ -38,28 +38,7 @@ const DEFAULT_APP_RELEASE = {
   sha256: "",
   published_at: "2026-05-04T00:00:00.000Z"
 };
-const PUBLIC_STORE_EXTENSIONS = [
-  {
-    extension_id: "open-yanzi-homepage",
-    display_name: "打开燕子官网",
-    latest_version: "1.0.0",
-    description: "一键打开燕子官网首页。",
-    category: "测试扩展",
-    keywords: ["yanzi", "官网", "测试", "open-yanzi-homepage"],
-    icon: `${PUBLIC_SITE_ORIGIN}/assets/logo-white-transparent.png`,
-    package_path: "/downloads/open-yanzi-homepage.zip"
-  },
-  {
-    extension_id: "open-yanzi-github",
-    display_name: "打开燕子 GitHub",
-    latest_version: "1.0.0",
-    description: "一键打开燕子 GitHub 仓库。",
-    category: "测试扩展",
-    keywords: ["yanzi", "github", "测试", "open-yanzi-github"],
-    icon: "https://github.githubassets.com/favicons/favicon.png",
-    package_path: "/downloads/open-yanzi-github.zip"
-  }
-];
+const PUBLIC_STORE_EXTENSIONS = [];
 const PUBLIC_STORE_EXTENSION_MAP = new Map(
   PUBLIC_STORE_EXTENSIONS.map((item) => [item.extension_id, item])
 );
@@ -138,8 +117,49 @@ function recordAuthenticatedUser(request, auth) {
   if (auth?.userId) requestIdentity.set(request, { userId: String(auth.userId), deviceId: auth.deviceId ? String(auth.deviceId) : null });
   return auth;
 }
+export async function cleanupExpiredSyncData(env) {
+  if (!env.DB) return;
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 86400 * 1000).toISOString();
+  const fourteenDaysAgo = new Date(now.getTime() - 14 * 86400 * 1000).toISOString();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400 * 1000).toISOString();
+
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        `DELETE FROM device_messages
+         WHERE status IN ('completed', 'expired', 'failed', 'cancelled')
+           AND (acked_at < ? OR (acked_at IS NULL AND created_at < ?))`
+      ).bind(sevenDaysAgo, sevenDaysAgo),
+      env.DB.prepare(
+        `DELETE FROM device_message_sequence
+         WHERE message_id NOT IN (SELECT message_id FROM device_messages)`
+      ),
+      env.DB.prepare(
+        `DELETE FROM mobile_message_idempotency
+         WHERE message_id NOT IN (SELECT message_id FROM device_messages)`
+      ),
+      env.DB.prepare(
+        `DELETE FROM user_sync_object_history
+         WHERE updated_at < ?`
+      ).bind(fourteenDaysAgo),
+      env.DB.prepare(
+        `DELETE FROM user_extension_archive_history
+         WHERE updated_at < ?`
+      ).bind(thirtyDaysAgo)
+    ]);
+  } catch (err) {
+    console.error("Failed to cleanup expired sync data:", err);
+  }
+}
+
 export default {
-  async scheduled(event, env, ctx) { ctx.waitUntil(cleanupAttachments(env)); ctx.waitUntil(cleanupExternalAccess(env)); ctx.waitUntil(cleanupEnvironment(env)); },
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(cleanupAttachments(env));
+    ctx.waitUntil(cleanupExternalAccess(env));
+    ctx.waitUntil(cleanupEnvironment(env));
+    ctx.waitUntil(cleanupExpiredSyncData(env));
+  },
   async fetch(request, env, ctx) {
     const started = Date.now();
     const metered = env.DB ? meterD1(env.DB) : null;
@@ -665,36 +685,13 @@ async function handleRequest(request, env, ctx) {
   if (url.pathname === "/v1/auth/me" && request.method === "GET") {
     const auth = await requireAuth(request, env);
     const vipInfo = await getUserVipInfo(env, auth.userId);
-    // Legacy clients poll account status. Never create/query the wish-wall tables
-    // for free users who cannot access that paid cloud feature.
-    if (env.CLOUD_VIP_ONLY === 'true' && !vipInfo.isVip) {
-      return json({userId:auth.userId, username:auth.username, email:auth.email,
-        points:0, wishesCount:0, acceptedCount:0, isAdmin:isAdminUser(auth, env),
-        ...vipInfo});
-    }
-    let points = 0;
-    let wishesCount = 0;
-    let acceptedCount = 0;
-    try {
-      await ensureWishWallTables(env);
-      const userPoints = await env.DB.prepare(
-        "select points, wishes_count, accepted_count from user_points where user_id = ?"
-      ).bind(auth.userId).first();
-      if (userPoints) {
-        points = Number(userPoints.points) || 0;
-        wishesCount = Number(userPoints.wishes_count) || 0;
-        acceptedCount = Number(userPoints.accepted_count) || 0;
-      }
-    } catch (e) {
-      console.warn("user_points query fallback:", e);
-    }
     return json({
       userId: auth.userId,
       username: auth.username,
       email: auth.email,
-      points,
-      wishesCount,
-      acceptedCount,
+      points: 0,
+      wishesCount: 0,
+      acceptedCount: 0,
       isAdmin: isAdminUser(auth, env),
       ...vipInfo
     });
@@ -954,74 +951,7 @@ async function handleRequest(request, env, ctx) {
     });
   }
 
-  // --- 心愿墙 Wish Wall 相关 API ---
-  if (url.pathname === "/v1/wishes/leaderboard" && request.method === "GET") {
-    const leaderboard = await getWishLeaderboard(env);
-    return json({ ok: true, leaderboard });
-  }
-
-  if (url.pathname === "/v1/user/points" && request.method === "GET") {
-    const auth = await requireAuth(request, env);
-    const details = await getUserPointsDetail(env, auth.userId);
-    return json({ ok: true, userId: auth.userId, ...details });
-  }
-
-  if (url.pathname === "/v1/wishes" && request.method === "GET") {
-    const status = url.searchParams.get("status") || "all";
-    const category = url.searchParams.get("category") || "all";
-    const search = url.searchParams.get("search") || "";
-    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
-    const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "12", 10)));
-    const result = await listWishes(env, { status, category, search, page, limit });
-    return json({ ok: true, ...result });
-  }
-
-  if (url.pathname === "/v1/wishes" && request.method === "POST") {
-    const auth = await requireAuth(request, env);
-    const payload = await readJson(request);
-    const result = await createWish(env, auth, payload);
-    return json({ ok: true, wish: result.wish, pointsGained: result.pointsGained });
-  }
-
-  const wishAcceptMatch = url.pathname.match(/^\/v1\/wishes\/([^/]+)\/accept$/);
-  if (wishAcceptMatch && request.method === "POST") {
-    const auth = await requireAuth(request, env);
-    const wishId = decodeURIComponent(wishAcceptMatch[1]);
-    const payload = await readJson(request);
-    const result = await acceptWishReply(env, auth, wishId, payload);
-    return json({ ok: true, ...result });
-  }
-
-  const wishReplyMatch = url.pathname.match(/^\/v1\/wishes\/([^/]+)\/replies$/);
-  if (wishReplyMatch && request.method === "POST") {
-    const auth = await requireAuth(request, env);
-    const wishId = decodeURIComponent(wishReplyMatch[1]);
-    const payload = await readJson(request);
-    const result = await createWishReply(env, auth, wishId, payload);
-    return json({ ok: true, reply: result.reply });
-  }
-
-  const wishDetailMatch = url.pathname.match(/^\/v1\/wishes\/([^/]+)$/);
-  if (wishDetailMatch && request.method === "GET") {
-    const wishId = decodeURIComponent(wishDetailMatch[1]);
-    const result = await getWishDetail(env, wishId);
-    return json({ ok: true, ...result });
-  }
-
-  if (wishDetailMatch && request.method === "PUT") {
-    const auth = await requireAuth(request, env);
-    const wishId = decodeURIComponent(wishDetailMatch[1]);
-    const payload = await readJson(request);
-    const result = await updateWish(env, auth, wishId, payload);
-    return json({ ok: true, wish: result.wish });
-  }
-
-  if (wishDetailMatch && request.method === "DELETE") {
-    const auth = await requireAuth(request, env);
-    const wishId = decodeURIComponent(wishDetailMatch[1]);
-    const result = await deleteWish(env, auth, wishId);
-    return json({ ok: true, ...result });
-  }
+  // --- 心愿墙 Wish Wall 已下线 ---
 
   if (url.pathname === "/v1/app/update/latest" && request.method === "GET") {
     try {
@@ -1163,127 +1093,13 @@ async function handleRequest(request, env, ctx) {
   }
 
   if (url.pathname === "/v1/extensions" && request.method === "GET") {
-    const search = String(url.searchParams.get("q") || "").trim().toLowerCase();
-    const requestedPage = Number.parseInt(String(url.searchParams.get("page") || "1"), 10);
-    const requestedPageSize = Number.parseInt(String(url.searchParams.get("pageSize") || "24"), 10);
-    const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-    const pageSize = Number.isFinite(requestedPageSize)
-      ? Math.max(1, Math.min(requestedPageSize, 60))
-      : 24;
-    const publicExtensionRows = await env.DB.prepare(
-      `select
-        extension_id,
-        display_name,
-        latest_version,
-        manifest_json,
-        icon_key,
-        archive_key,
-        archive_sha256,
-        publisher_user_id,
-        publisher_username,
-        published_at,
-        is_published,
-        updated_at,
-        (
-          select count(*)
-          from user_extensions ue
-          where ue.extension_id = extensions.extension_id
-            and ue.enabled = 1
-        ) as install_count
-      from extensions
-      where extension_id in (${PUBLIC_STORE_EXTENSIONS.map(() => "?").join(", ")})`
-    )
-      .bind(...PUBLIC_STORE_EXTENSIONS.map((item) => item.extension_id))
-      .all();
-    const publicRowMap = new Map(
-      (publicExtensionRows.results ?? []).map((row) => [row.extension_id, row])
-    );
-    const publicItems = PUBLIC_STORE_EXTENSIONS
-      .map((definition) => serializeExtensionListItem(url, publicRowMap.get(definition.extension_id) || null, definition))
-      .filter((item) => matchesStoreSearch(item, search));
-    const publicCount = publicItems.length;
-    const start = (page - 1) * pageSize;
-
-    const dynamicWhere = search
-      ? `where is_published = 1
-           and extension_id not in (${PUBLIC_STORE_EXTENSION_IDS_SQL})
-           and extension_id not in ('yanzi-webdav-settings', 'yanzi-quickpanel-settings')
-           and lower(ifnull(manifest_json, '')) not like '%"category":"系统配置"%'
-           and (
-             lower(extension_id) like ?
-             or lower(display_name) like ?
-             or lower(ifnull(manifest_json, '')) like ?
-           )`
-      : `where is_published = 1
-           and extension_id not in (${PUBLIC_STORE_EXTENSION_IDS_SQL})
-           and extension_id not in ('yanzi-webdav-settings', 'yanzi-quickpanel-settings')
-           and lower(ifnull(manifest_json, '')) not like '%"category":"系统配置"%'`;
-    const dynamicBindings = search
-      ? [`%${search}%`, `%${search}%`, `%${search}%`]
-      : [];
-    const dynamicCountQuery = await env.DB.prepare(
-      `select count(*) as total
-       from extensions
-       ${dynamicWhere}`
-    )
-      .bind(...dynamicBindings)
-      .first();
-    const dynamicTotal = Number(dynamicCountQuery?.total || 0);
-    const total = publicCount + dynamicTotal;
-    const totalPages = Math.max(1, Math.ceil(Math.max(total, 1) / pageSize));
-    const safePage = Math.min(page, totalPages);
-    const safeStart = (safePage - 1) * pageSize;
-
-    const publicSlice = publicItems.slice(safeStart, safeStart + pageSize);
-    const remainingSlots = pageSize - publicSlice.length;
-    const dynamicOffset = Math.max(0, safeStart - publicCount);
-    let dynamicItems = [];
-
-    if (remainingSlots > 0)
-    {
-      const rows = await env.DB.prepare(
-        `select
-          extension_id,
-          display_name,
-          latest_version,
-          manifest_json,
-          icon_key,
-          archive_key,
-          archive_sha256,
-          publisher_user_id,
-          publisher_username,
-          published_at,
-          is_published,
-          updated_at,
-          (
-            select count(*)
-            from user_extensions ue
-            where ue.extension_id = extensions.extension_id
-              and ue.enabled = 1
-          ) as install_count
-        from extensions
-        ${dynamicWhere}
-        order by updated_at desc
-        limit ?
-        offset ?`
-      )
-        .bind(...dynamicBindings, remainingSlots, dynamicOffset)
-        .all();
-
-      dynamicItems = (rows.results ?? [])
-        .filter((row) => !PUBLIC_STORE_EXTENSION_MAP.has(row.extension_id))
-        .map((row) => serializeExtensionListItem(url, row));
-    }
-
-    const pagedItems = [...publicSlice, ...dynamicItems];
-
     return json({
-      items: pagedItems,
-      page: safePage,
-      page_size: pageSize,
-      total,
-      total_pages: totalPages,
-      has_more: safePage < totalPages
+      items: [],
+      page: 1,
+      page_size: 24,
+      total: 0,
+      total_pages: 0,
+      has_more: false
     });
   }
 
@@ -1894,7 +1710,16 @@ async function handleRequest(request, env, ctx) {
            where head.user_id = ? and head.extension_id = ? and head.revision = ?
          )`
       ).bind(source.version, source.archive_key, source.archive_sha256, now,
-             extensionId, auth.userId, extensionId, revision)
+             extensionId, auth.userId, extensionId, revision),
+      env.DB.prepare(
+        `delete from user_extension_archive_history
+         where user_id = ? and extension_id = ?
+           and revision not in (
+             select revision from user_extension_archive_history
+             where user_id = ? and extension_id = ?
+             order by revision desc limit 5
+           )`
+      ).bind(auth.userId, extensionId, auth.userId, extensionId)
     ]);
     if (Number(results?.[0]?.meta?.changes || 0) === 0) {
       const latest = await env.DB.prepare(
@@ -2036,7 +1861,16 @@ async function handleRequest(request, env, ctx) {
              where head.user_id = ? and head.extension_id = ?
                and head.revision = ? and head.archive_key = ?
            )`
-      ).bind(version, archiveKey, sha256, now, extensionId, auth.userId, extensionId, revision, archiveKey)
+      ).bind(version, archiveKey, sha256, now, extensionId, auth.userId, extensionId, revision, archiveKey),
+      env.DB.prepare(
+        `delete from user_extension_archive_history
+         where user_id = ? and extension_id = ?
+           and revision not in (
+             select revision from user_extension_archive_history
+             where user_id = ? and extension_id = ?
+             order by revision desc limit 5
+           )`
+      ).bind(auth.userId, extensionId, auth.userId, extensionId)
     ]);
 
     if (Number(results?.[0]?.meta?.changes || 0) === 0) {
@@ -4728,425 +4562,7 @@ async function getYanmStateViewUrl(env, userId) {
   return null;
 }
 
-// ==========================================
-// 心愿墙 (Wish Wall) 与 积分体系 (Points System)
-// ==========================================
-
-let _wishWallTablesInitialized = false;
-
-async function ensureWishWallTables(env) {
-  if (_wishWallTablesInitialized) return;
-  try {
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS wishes (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        username TEXT NOT NULL,
-        title TEXT NOT NULL,
-        description TEXT NOT NULL,
-        category TEXT NOT NULL DEFAULT '通用',
-        status TEXT NOT NULL DEFAULT 'open',
-        accepted_reply_id TEXT,
-        reward_points INTEGER NOT NULL DEFAULT 50,
-        reply_count INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      )
-    `).run();
-
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS wish_replies (
-        id TEXT PRIMARY KEY,
-        wish_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        username TEXT NOT NULL,
-        content TEXT NOT NULL,
-        code_snippet TEXT,
-        is_accepted INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL
-      )
-    `).run();
-
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS user_points (
-        user_id TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        points INTEGER NOT NULL DEFAULT 0,
-        wishes_count INTEGER NOT NULL DEFAULT 0,
-        accepted_count INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT NOT NULL
-      )
-    `).run();
-
-    await env.DB.prepare(`
-      CREATE TABLE IF NOT EXISTS point_transactions (
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        amount INTEGER NOT NULL,
-        action_type TEXT NOT NULL,
-        description TEXT NOT NULL,
-        reference_id TEXT,
-        created_at TEXT NOT NULL
-      )
-    `).run();
-
-    await env.DB.prepare(`
-      CREATE INDEX IF NOT EXISTS idx_wishes_status_created ON wishes (status, created_at DESC)
-    `).run().catch(() => {});
-
-    await env.DB.prepare(`
-      CREATE INDEX IF NOT EXISTS idx_wish_replies_wish_id ON wish_replies (wish_id, created_at ASC)
-    `).run().catch(() => {});
-
-    await env.DB.prepare(`
-      CREATE INDEX IF NOT EXISTS idx_user_points_rank ON user_points (points DESC, accepted_count DESC)
-    `).run().catch(() => {});
-
-    // 清理历史测试种子假数据，保持完全纯净的初始化状态
-    await env.DB.batch([
-      env.DB.prepare("DELETE FROM wish_replies WHERE wish_id LIKE 'wsh_%' OR user_id LIKE 'seed_%'"),
-      env.DB.prepare("DELETE FROM wishes WHERE id LIKE 'wsh_%' OR user_id LIKE 'seed_%'"),
-      env.DB.prepare("DELETE FROM user_points WHERE user_id LIKE 'seed_%'")
-    ]).catch(() => {});
-
-    _wishWallTablesInitialized = true;
-  } catch (err) {
-    console.error("Failed to ensure wish wall tables:", err);
-  }
-}
-
-async function addPoints(env, userId, username, amount, actionType, description, referenceId = null) {
-  await ensureWishWallTables(env);
-  const now = isoNow();
-  const txId = `ptx_${randomHex(8)}`;
-
-  const existing = await env.DB.prepare(
-    "SELECT user_id, points, wishes_count, accepted_count FROM user_points WHERE user_id = ?"
-  ).bind(userId).first();
-
-  let newPoints = amount;
-  let wishesCount = 0;
-  let acceptedCount = 0;
-
-  if (existing) {
-    newPoints = (existing.points || 0) + amount;
-    wishesCount = existing.wishes_count || 0;
-    acceptedCount = existing.accepted_count || 0;
-  }
-
-  if (actionType === "publish_wish") {
-    wishesCount += 1;
-  } else if (actionType === "be_accepted") {
-    acceptedCount += 1;
-  }
-
-  await env.DB.batch([
-    env.DB.prepare(`
-      INSERT INTO user_points (user_id, username, points, wishes_count, accepted_count, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(user_id) DO UPDATE SET
-        username = excluded.username,
-        points = excluded.points,
-        wishes_count = excluded.wishes_count,
-        accepted_count = excluded.accepted_count,
-        updated_at = excluded.updated_at
-    `).bind(userId, username, Math.max(0, newPoints), wishesCount, acceptedCount, now),
-
-    env.DB.prepare(`
-      INSERT INTO point_transactions (id, user_id, amount, action_type, description, reference_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).bind(txId, userId, amount, actionType, description, referenceId, now)
-  ]);
-
-  return { points: newPoints, wishesCount, acceptedCount };
-}
-
-async function listWishes(env, { status = "all", category = "all", search = "", page = 1, limit = 12 }) {
-  await ensureWishWallTables(env);
-  const conditions = [];
-  const bindings = [];
-
-  if (status && status !== "all") {
-    conditions.push("status = ?");
-    bindings.push(status);
-  }
-
-  if (category && category !== "all") {
-    conditions.push("category = ?");
-    bindings.push(category);
-  }
-
-  if (search && search.trim()) {
-    conditions.push("(title LIKE ? OR description LIKE ?)");
-    const term = `%${search.trim()}%`;
-    bindings.push(term, term);
-  }
-
-  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-  const countSql = `SELECT COUNT(*) as total FROM wishes ${whereClause}`;
-  let totalRow = await env.DB.prepare(countSql).bind(...bindings).first();
-  let total = totalRow?.total || 0;
-
-  const offset = (page - 1) * limit;
-  const listSql = `
-    SELECT id, user_id, username, title, description, category, status, accepted_reply_id, reward_points, reply_count, created_at, updated_at
-    FROM wishes
-    ${whereClause}
-    ORDER BY
-      CASE status WHEN 'open' THEN 1 WHEN 'answered' THEN 2 ELSE 3 END ASC,
-      created_at DESC
-    LIMIT ? OFFSET ?
-  `;
-  const { results: wishes } = await env.DB.prepare(listSql).bind(...bindings, limit, offset).all();
-
-  return { wishes: wishes || [], total, page, limit };
-}
-
-async function getWishDetail(env, wishId) {
-  await ensureWishWallTables(env);
-  const wish = await env.DB.prepare(
-    "SELECT * FROM wishes WHERE id = ?"
-  ).bind(wishId).first();
-
-  if (!wish) {
-    throw new HttpError(404, "wish_not_found", "心愿不存在或已被移除");
-  }
-
-  const { results: replies } = await env.DB.prepare(`
-    SELECT id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at
-    FROM wish_replies
-    WHERE wish_id = ?
-    ORDER BY is_accepted DESC, created_at ASC
-  `).bind(wishId).all();
-
-  return { wish, replies: replies || [] };
-}
-
-async function createWish(env, auth, payload) {
-  await ensureWishWallTables(env);
-  const title = String(payload.title || "").trim();
-  const description = String(payload.description || "").trim();
-  const category = String(payload.category || "通用").trim();
-  const rewardPoints = 50;
-
-  if (!title) {
-    throw new HttpError(400, "invalid_title", "请提供心愿标题");
-  }
-  if (title.length < 3 || title.length > 80) {
-    throw new HttpError(400, "invalid_title_length", "标题长度应在 3 到 80 个字符之间");
-  }
-  if (!description || description.length < 5) {
-    throw new HttpError(400, "invalid_description", "请详细描述您希望小程序具备的功能（至少 5 个字符）");
-  }
-
-  const wishId = `wsh_${randomHex(8)}`;
-  const now = isoNow();
-
-  await env.DB.prepare(`
-    INSERT INTO wishes (id, user_id, username, title, description, category, status, reward_points, reply_count, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'open', ?, 0, ?, ?)
-  `).bind(wishId, auth.userId, auth.username, title, description, category, rewardPoints, now, now).run();
-
-  // 发布心愿给发布者奖励 +5 积分
-  const pointResult = await addPoints(env, auth.userId, auth.username, 5, "publish_wish", `发布心愿《${title.substring(0, 20)}》`, wishId);
-
-  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
-  return { wish, pointsGained: 5, userPoints: pointResult.points };
-}
-
-async function createWishReply(env, auth, wishId, payload) {
-  await ensureWishWallTables(env);
-  const content = String(payload.content || "").trim();
-  const codeSnippet = String(payload.codeSnippet || "").trim();
-
-  if (!content && !codeSnippet) {
-    throw new HttpError(400, "empty_reply", "请提供方案说明或小程序代码");
-  }
-
-  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
-  if (!wish) {
-    throw new HttpError(404, "wish_not_found", "心愿不存在");
-  }
-
-  const replyId = `wrp_${randomHex(8)}`;
-  const now = isoNow();
-
-  const newStatus = wish.status === "open" ? "answered" : wish.status;
-
-  await env.DB.batch([
-    env.DB.prepare(`
-      INSERT INTO wish_replies (id, wish_id, user_id, username, content, code_snippet, is_accepted, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, 0, ?)
-    `).bind(replyId, wishId, auth.userId, auth.username, content, codeSnippet, now),
-
-    env.DB.prepare(`
-      UPDATE wishes
-      SET reply_count = reply_count + 1,
-          status = ?,
-          updated_at = ?
-      WHERE id = ?
-    `).bind(newStatus, now, wishId)
-  ]);
-
-  const reply = await env.DB.prepare("SELECT * FROM wish_replies WHERE id = ?").bind(replyId).first();
-  return { reply };
-}
-
-async function acceptWishReply(env, auth, wishId, payload) {
-  await ensureWishWallTables(env);
-  const replyId = String(payload.replyId || "").trim();
-  if (!replyId) {
-    throw new HttpError(400, "reply_id_required", "请指定要验收采纳的方案 ID");
-  }
-
-  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
-  if (!wish) {
-    throw new HttpError(404, "wish_not_found", "心愿不存在");
-  }
-
-  if (wish.user_id !== auth.userId) {
-    throw new HttpError(403, "forbidden", "只有心愿发布者本人才能验收并采纳方案");
-  }
-
-  if (wish.status === "accepted") {
-    throw new HttpError(400, "already_accepted", "该心愿已验收完成，不可重复验收");
-  }
-
-  const reply = await env.DB.prepare("SELECT * FROM wish_replies WHERE id = ? AND wish_id = ?").bind(replyId, wishId).first();
-  if (!reply) {
-    throw new HttpError(404, "reply_not_found", "指定的方案回复不存在");
-  }
-
-  const now = isoNow();
-
-  await env.DB.batch([
-    env.DB.prepare(`
-      UPDATE wishes
-      SET status = 'accepted',
-          accepted_reply_id = ?,
-          updated_at = ?
-      WHERE id = ?
-    `).bind(replyId, now, wishId),
-
-    env.DB.prepare(`
-      UPDATE wish_replies
-      SET is_accepted = 1
-      WHERE id = ?
-    `).bind(replyId)
-  ]);
-
-  // 奖励方案提交者 +50 积分
-  await addPoints(env, reply.user_id, reply.username, 50, "be_accepted", `小程序方案被采纳 (心愿: ${wish.title.substring(0, 20)})`, wishId);
-
-  // 奖励验收结单的发布者 +10 积分
-  await addPoints(env, auth.userId, auth.username, 10, "accept_wish", `验收并通过小程序方案 (心愿: ${wish.title.substring(0, 20)})`, wishId);
-
-  const updatedWish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
-  return {
-    ok: true,
-    wish: updatedWish,
-    developerReward: 50,
-    creatorReward: 10,
-    acceptedReplyId: replyId
-  };
-}
-
-async function getWishLeaderboard(env) {
-  try {
-    await ensureWishWallTables(env);
-    const { results: leaderboard } = await env.DB.prepare(`
-      SELECT user_id, username, points, wishes_count, accepted_count, updated_at
-      FROM user_points
-      ORDER BY points DESC, accepted_count DESC
-      LIMIT 10
-    `).all();
-    return leaderboard || [];
-  } catch (err) {
-    console.warn("getWishLeaderboard fallback:", err);
-    return [];
-  }
-}
-
-async function getUserPointsDetail(env, userId) {
-  try {
-    await ensureWishWallTables(env);
-    const userPoints = await env.DB.prepare(
-      "SELECT points, wishes_count, accepted_count FROM user_points WHERE user_id = ?"
-    ).bind(userId).first();
-
-    const { results: transactions } = await env.DB.prepare(`
-      SELECT id, amount, action_type, description, reference_id, created_at
-      FROM point_transactions
-      WHERE user_id = ?
-      ORDER BY created_at DESC
-      LIMIT 20
-    `).bind(userId).all();
-
-    return {
-      points: userPoints?.points ?? 0,
-      wishesCount: userPoints?.wishes_count ?? 0,
-      acceptedCount: userPoints?.accepted_count ?? 0,
-      transactions: transactions || []
-    };
-  } catch (err) {
-    console.warn("getUserPointsDetail fallback:", err);
-    return {
-      points: 0,
-      wishesCount: 0,
-      acceptedCount: 0,
-      transactions: []
-    };
-  }
-}
-
-async function updateWish(env, auth, wishId, payload) {
-  await ensureWishWallTables(env);
-  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
-  if (!wish) {
-    throw new HttpError(404, "wish_not_found", "心愿不存在");
-  }
-
-  if (wish.user_id !== auth.userId && !isAdminUser(auth, env)) {
-    throw new HttpError(403, "forbidden", "只有心愿发布者本人才能修改该心愿");
-  }
-
-  if (wish.status === "accepted") {
-    throw new HttpError(400, "cannot_edit_accepted_wish", "已验收结单的心愿不可修改");
-  }
-
-  const title = payload.title ? String(payload.title).trim() : wish.title;
-  const description = payload.description ? String(payload.description).trim() : wish.description;
-  const category = payload.category ? String(payload.category).trim() : wish.category;
-  const now = isoNow();
-
-  await env.DB.prepare(`
-    UPDATE wishes
-    SET title = ?, description = ?, category = ?, updated_at = ?
-    WHERE id = ?
-  `).bind(title, description, category, now, wishId).run();
-
-  const updated = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
-  return { wish: updated };
-}
-
-async function deleteWish(env, auth, wishId) {
-  await ensureWishWallTables(env);
-  const wish = await env.DB.prepare("SELECT * FROM wishes WHERE id = ?").bind(wishId).first();
-  if (!wish) {
-    throw new HttpError(404, "wish_not_found", "心愿不存在");
-  }
-
-  if (wish.user_id !== auth.userId && !isAdminUser(auth, env)) {
-    throw new HttpError(403, "forbidden", "只有心愿发布者本人才能删除该心愿");
-  }
-
-  await env.DB.batch([
-    env.DB.prepare("DELETE FROM wish_replies WHERE wish_id = ?").bind(wishId),
-    env.DB.prepare("DELETE FROM wishes WHERE id = ?").bind(wishId)
-  ]);
-
-  return { ok: true, deleted: true, wishId };
-}
+// 心愿墙 (Wish Wall) 与 积分体系 已完全下线移除
 
 let _licenseTablesInitialized = false;
 async function ensureLicenseTables(env) {

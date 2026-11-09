@@ -210,6 +210,23 @@ if (-not $SkipInstaller) {
     $zipFile = Join-Path $installerOutDir "Yanzi-win-Portable.zip"
     if (-not (Test-Path $zipFile)) { throw 'Velopack portable package is missing.' }
     Rename-Item -LiteralPath $zipFile -NewName "Yanzi-win-Portable-$Version.zip" -Force
+    # Keep the asset manifest aligned with the versioned files after Velopack output renaming.
+    $assetsManifestPath = Join-Path $installerOutDir 'assets.win.json'
+    if (Test-Path $assetsManifestPath) {
+        $assetsManifest = @(Get-Content -LiteralPath $assetsManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+        foreach ($asset in $assetsManifest) {
+            switch ([string]$asset.RelativeFileName) {
+                'Yanzi-win-Setup.exe' { $asset.RelativeFileName = "Yanzi-win-Setup-$cleanVer.exe" }
+                'Yanzi-win-Portable.zip' { $asset.RelativeFileName = "Yanzi-win-Portable-$cleanVer.zip" }
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$asset.RelativeFileName) -or
+                -not (Test-Path -LiteralPath (Join-Path $installerOutDir ([string]$asset.RelativeFileName)) -PathType Leaf)) {
+                throw "Asset manifest references a missing release file: $($asset.RelativeFileName)"
+            }
+        }
+        $manifestJson = ConvertTo-Json -InputObject $assetsManifest -Depth 8 -Compress
+        [IO.File]::WriteAllText($assetsManifestPath, $manifestJson, (New-Object System.Text.UTF8Encoding($false)))
+    }
 
     # 智能保留最近 2 个版本的 full.nupkg 作为下次本地增量基准，仅清理历史旧 exe/zip 和过期 delta 包
     if (-not $KeepHistoricalPackages) {

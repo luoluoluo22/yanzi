@@ -395,9 +395,11 @@ internal static class AppSettingsMigration
             ("system", "系统"),
             ("yanyu", BrandTerms.DefaultYanVoice),
             ("ai", "AI对话"),
-            ("store", $"{BrandTerms.DefaultMiniApp}商店"),
             ("capability", "能力")
         };
+
+        // 小程序市场已下线，从现有配置中移除 store 分类
+        settings.SearchScopeConfigs.RemoveAll(c => string.Equals(c.Key, "store", StringComparison.OrdinalIgnoreCase));
 
         foreach (var def in defaultList)
         {

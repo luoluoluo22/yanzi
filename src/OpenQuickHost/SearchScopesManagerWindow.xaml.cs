@@ -24,7 +24,7 @@ namespace OpenQuickHost
             
             foreach (var config in _settings.SearchScopeConfigs)
             {
-                if (config == null) continue;
+                if (config == null || string.Equals(config.Key, "store", System.StringComparison.OrdinalIgnoreCase)) continue;
                 
                 string displayLabel = config.Label;
                 if (!config.IsPinned)

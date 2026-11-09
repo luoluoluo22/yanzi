@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # Offline fixture QA: no GitHub access, no installer, no repository writes.
 $ErrorActionPreference='Stop'
 $source=Join-Path $PSScriptRoot 'release-lifecycle.ps1'
@@ -6,7 +6,7 @@ $base=Join-Path ([IO.Path]::GetTempPath()) ('yanzi-release-orchestrator-test-'+[
 $devices=Join-Path $base 'devices'
 New-Item -Path $devices -ItemType Directory -Force | Out-Null
 $version='99.8.7'
-$published='2026-10-31T01:00:00Z'
+$published=[DateTime]::UtcNow.AddMinutes(-10).ToString('o')
 $release=@{
     tag_name="v$version";draft=$false;prerelease=$false
     published_at=$published;html_url="https://github.com/luoluoluo22/yanzi/releases/tag/v$version"
@@ -14,7 +14,8 @@ $release=@{
 }
 $release|ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $base 'release.json') -Encoding UTF8
 function Receipt([string]$machine,[string]$state='verified-running',[string]$v='99.8.7',
-    [string]$time='2026-10-31T01:05:00Z',[bool]$running=$true) {
+    [string]$time='',[bool]$running=$true) {
+    if ([string]::IsNullOrWhiteSpace($time)) { $time = [DateTime]::UtcNow.AddMinutes(-5).ToString('o') }
     return @{schemaVersion=1;machine=$machine;state=$state;installedVersion=$v;
         fileVersion=$v;checkedAtUtc=$time;processRunning=$running}
 }
@@ -36,11 +37,11 @@ try {
     Run-Scenario 'both-installed-running' 0
     Write-Receipt 'CHINAMI-3IF988E' (Receipt 'CHINAMI-3IF988E' 'pending' '99.8.6')
     Run-Scenario 'old-office-version-not-success' 2
-    Write-Receipt 'CHINAMI-3IF988E' (Receipt 'CHINAMI-3IF988E' 'verified-running' '99.8.7' '2026-10-30T22:00:00Z')
+    Write-Receipt 'CHINAMI-3IF988E' (Receipt 'CHINAMI-3IF988E' 'verified-running' '99.8.7' ([DateTime]::UtcNow.AddHours(-13).ToString('o')))
     Run-Scenario 'stale-receipt-not-success' 2
     Write-Receipt 'CHINAMI-3IF988E' (Receipt 'CHINAMI-3IF988E' 'failed')
     Run-Scenario 'failed-office-install-not-success' 2
-    Write-Receipt 'CHINAMI-3IF988E' (Receipt 'CHINAMI-3IF988E' 'verified-running' '99.8.7' '2026-10-31T01:05:00Z' $false)
+    Write-Receipt 'CHINAMI-3IF988E' (Receipt 'CHINAMI-3IF988E' 'verified-running' '99.8.7' ([DateTime]::UtcNow.AddMinutes(-5).ToString('o')) $false)
     Run-Scenario 'no-process-not-success' 2
     Remove-Item (Join-Path $devices 'CHINAMI-3IF988E.json') -Force
     Run-Scenario 'missing-receipt-not-success' 2

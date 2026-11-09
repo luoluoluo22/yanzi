@@ -31,14 +31,11 @@ public static class MarkdownTextBehavior
         if (string.IsNullOrEmpty(content)) return;
 
         if (!AiChatHtmlContent.TryRender(textBlock, content))
-            textBlock.Inlines.Add(new Run(content));
+            AiChatEmoji.AppendRuns(textBlock.Inlines, content);
     }
 
     // HTML DOM text nodes are already escaped and parsed by HtmlAgilityPack.
     // Treat their content as text, not a second, ad-hoc Markdown dialect.
-    internal static void ParseAndAddInlineSegment(InlineCollection inlines, string text)
-    {
-        if (!string.IsNullOrEmpty(text))
-            inlines.Add(new Run(text));
-    }
+    internal static void ParseAndAddInlineSegment(InlineCollection inlines, string text) =>
+        AiChatEmoji.AppendRuns(inlines, text);
 }
