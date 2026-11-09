@@ -109,16 +109,17 @@ if ($LASTEXITCODE -ne 0) {
 $ErrorActionPreference = $oldEAP
 
 $latestArgs = if ($Platform -eq "android") { @("--latest=false") } else { @() }
+$draftArgs = if ($Draft) { @('--draft') } else { @() }
 $releaseTitle = if ($Platform -eq "android") { "Yanzi for Android $plainVersion" } else { "Yanzi $plainVersion" }
 
 if (-not $releaseExists) {
-    $releaseArgs = @('release','create',$tag,'--repo',$Repo,'--target',$Target,'--title',$releaseTitle,'--notes-file',$notesPath) + $latestArgs
+    $releaseArgs = @('release','create',$tag,'--repo',$Repo,'--target',$Target,'--title',$releaseTitle,'--notes-file',$notesPath) + $latestArgs + $draftArgs
     & gh @releaseArgs | Out-Host
 } else {
     $releaseArgs = @('release','edit',$tag,'--repo',$Repo,'--title',$releaseTitle,'--notes-file',$notesPath) + $latestArgs
+    if ($Draft) { $releaseArgs += '--draft' }
     & gh @releaseArgs | Out-Host
 }
-
 if ($LASTEXITCODE -ne 0) { throw "Failed to create or edit release; upload was not attempted." }
 
 $filesToUpload = if ($Platform -eq "android") {
