@@ -206,6 +206,37 @@
         "tests/BrowserHelperBootstrapVerification/*.csproj",
         "scripts/test-browser-ai.ps1"
       ]
+    },
+    {
+      "id": "skill-export",
+      "title": "Skill 导出与全局安装",
+      "aliases": [
+        "导出 Skill",
+        "导出到全局",
+        "全局 Skill",
+        "Antigravity Skills",
+        "AI 可识别 Skill",
+        "Skill 安装"
+      ],
+      "paths": [
+        "src/OpenQuickHost/SkillInstallerService.cs",
+        "src/OpenQuickHost/SkillExportSuccessWindow.xaml",
+        "src/OpenQuickHost/SkillExportSuccessWindow.xaml.cs",
+        "src/OpenQuickHost/HostAssets.cs",
+        "src/OpenQuickHost/MainWindow.xaml.cs",
+        "tests/WpfUiMigrationSmoke/Program.cs",
+        "scripts/verify-skill-export.ps1"
+      ],
+      "handlers": [
+        "ExportSkillsToFolder",
+        "CopyPathButton_Click",
+        "CopySkillContentButton_Click",
+        "OpenFolderButton_Click"
+      ],
+      "tests": [
+        "tests/WpfUiMigrationSmoke/WpfUiMigrationSmoke.csproj",
+        "scripts/verify-skill-export.ps1"
+      ]
     }
   ]
 }

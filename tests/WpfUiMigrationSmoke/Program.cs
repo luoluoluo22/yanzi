@@ -95,6 +95,47 @@ internal static class Program
                 ClickByContent(w, "开始导出", "确认", "确定", "导出");
             }, true);
 
+            RunCheck("SkillInstallerService source, paths, merge, file count and SHA-256", VerifySkillInstallerService);
+
+            var successDialogResult = new SkillExportResult(
+                System.IO.Path.Combine(System.IO.Path.GetTempPath(), "yanzi-skill-export-preview"),
+                System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "skills"),
+                1,
+                2,
+                2,
+                true,
+                SkillExportTarget.Antigravity,
+                SkillExportScope.Global,
+                System.IO.Path.Combine(".gemini", "config", "skills"),
+                new[]
+                {
+                    new SkillExportedContent(
+                        "demo-skill",
+                        "A sample skill for the success dialog test.",
+                        "demo-skill/SKILL.md",
+                        "---\nname: demo-skill\ndescription: A sample skill for the success dialog test.\n---\n\n# Demo Skill\n\nFollow these instructions.")
+                },
+                new[]
+                {
+                    new SkillFileVerification("demo-skill/SKILL.md", new string('A', 64)),
+                    new SkillFileVerification("demo-skill/references/example.md", new string('B', 64))
+                });
+
+            Run("SkillExportSuccessWindow path, verification and AI-readable content", () =>
+                new SkillExportSuccessWindow(successDialogResult), w =>
+            {
+                var path = (TextBox)w.FindName("ExportPathBox")!;
+                var content = (TextBox)w.FindName("SkillContentBox")!;
+                var verification = (TextBlock)w.FindName("VerificationSummaryText")!;
+                Assert(path.Text == successDialogResult.ExportedPath, "export path must be visible");
+                Assert(content.Text.Contains("name: demo-skill") && content.Text.Contains("Follow these instructions."),
+                    "complete AI-readable SKILL.md content must be visible");
+                Assert(verification.Text.Contains("SHA-256") && verification.Text.Contains("2/2"),
+                    "file verification summary must be visible");
+                Assert(w.FindName("CopySkillContentButton") is Button, "copy Skill content action missing");
+                Assert(w.FindName("OpenFolderButton") is Button, "open export folder action missing");
+            }, false);
+
             Run("MouseTriggerCaptureWindow shared Select", () =>
                 new MouseTriggerCaptureWindow(), w =>
             {
@@ -418,6 +459,169 @@ internal static class Program
         w.ShowDialog();
         app.Shutdown();
         return 0;
+    }
+
+    private static void RunCheck(string label, Action check)
+    {
+        try
+        {
+            check();
+            Log("PASS " + label);
+            _pass++;
+        }
+        catch (Exception ex)
+        {
+            Log("FAIL " + label + ": " + ex);
+            _fail++;
+        }
+    }
+
+    private static void VerifySkillInstallerService()
+    {
+        var tempRoot = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "yanzi-skill-export-verification-" + Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            var sourceRoot = System.IO.Path.Combine(tempRoot, "bundled-skills");
+            var projectRoot = System.IO.Path.Combine(tempRoot, "project");
+            var sourceSkill = System.IO.Path.Combine(sourceRoot, "demo-skill");
+            var destinationSkills = System.IO.Path.Combine(projectRoot, ".codex", "skills");
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(sourceSkill, "references"));
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(sourceSkill, "scripts"));
+            System.IO.Directory.CreateDirectory(destinationSkills);
+            System.IO.Directory.CreateDirectory(projectRoot);
+
+            System.IO.File.WriteAllText(
+                System.IO.Path.Combine(sourceSkill, "SKILL.md"),
+                "---\nname: demo-skill\ndescription: A test skill used to verify complete export.\n---\n\n# Demo Skill\n\nUse this skill for verification.",
+                System.Text.Encoding.UTF8);
+            System.IO.File.WriteAllText(
+                System.IO.Path.Combine(sourceSkill, "references", "guide.md"),
+                "Reference content for the demo skill.",
+                System.Text.Encoding.UTF8);
+            System.IO.File.WriteAllText(
+                System.IO.Path.Combine(sourceSkill, "scripts", "verify.ps1"),
+                "Write-Output 'verified'",
+                System.Text.Encoding.UTF8);
+
+            var oldSkillDirectory = System.IO.Path.Combine(destinationSkills, "demo-skill");
+            System.IO.Directory.CreateDirectory(oldSkillDirectory);
+            var staleFile = System.IO.Path.Combine(oldSkillDirectory, "stale.txt");
+            System.IO.File.WriteAllText(staleFile, "old content");
+            var keepDirectory = System.IO.Path.Combine(destinationSkills, "keep-existing");
+            System.IO.Directory.CreateDirectory(keepDirectory);
+            var keepFile = System.IO.Path.Combine(keepDirectory, "SKILL.md");
+            System.IO.File.WriteAllText(keepFile, "---\nname: keep-existing\ndescription: Keep this user skill.\n---");
+
+            var result = SkillInstallerService.ExportSkills(
+                sourceRoot,
+                projectRoot,
+                SkillExportTarget.Codex,
+                SkillExportScope.Project);
+
+            Assert(result.SkillCount == 1, "exported Skill count");
+            Assert(result.FileCount == 3 && result.VerifiedFileCount == 3, "exported file count and verified count");
+            Assert(result.Sha256Verified, "SHA-256 verification must pass");
+            Assert(result.FileVerifications.Count == 3 &&
+                   result.FileVerifications.All(file => file.Sha256.Length == 64),
+                "every exported file must have a SHA-256 digest");
+            Assert(result.Skills.Count == 1 &&
+                   result.Skills[0].Name == "demo-skill" &&
+                   result.Skills[0].Description.Contains("complete export"),
+                "AI-readable Skill metadata");
+            Assert(result.Skills[0].MarkdownContent.Contains("Use this skill for verification."),
+                "full SKILL.md content");
+            Assert(System.IO.File.Exists(System.IO.Path.Combine(oldSkillDirectory, "references", "guide.md")),
+                "latest Skill files should replace the previous same-name folder");
+            Assert(!System.IO.File.Exists(staleFile), "stale files in the replaced Skill should be removed");
+            Assert(System.IO.File.Exists(keepFile), "unrelated user Skills must be preserved");
+
+            var expectedGlobalPath = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".gemini",
+                "config",
+                "skills");
+            var actualGlobalPath = SkillInstallerService.GetExportPath(
+                null,
+                SkillExportTarget.Antigravity,
+                SkillExportScope.Global);
+            Assert(
+                string.Equals(
+                    System.IO.Path.GetFullPath(actualGlobalPath),
+                    System.IO.Path.GetFullPath(expectedGlobalPath),
+                    StringComparison.OrdinalIgnoreCase),
+                "Antigravity must use the current global config/skills directory");
+
+            var expectedProjectPath = System.IO.Path.Combine(projectRoot, ".agent", "skills");
+            Assert(
+                string.Equals(
+                    System.IO.Path.GetFullPath(SkillInstallerService.GetExportPath(
+                        projectRoot,
+                        SkillExportTarget.Antigravity,
+                        SkillExportScope.Project)),
+                    System.IO.Path.GetFullPath(expectedProjectPath),
+                    StringComparison.OrdinalIgnoreCase),
+                "project-level export path must remain compatible");
+
+            var invalidSource = System.IO.Path.Combine(tempRoot, "invalid-skills");
+            var invalidProject = System.IO.Path.Combine(tempRoot, "invalid-project");
+            System.IO.Directory.CreateDirectory(System.IO.Path.Combine(invalidSource, "missing-metadata"));
+            System.IO.Directory.CreateDirectory(invalidProject);
+            System.IO.File.WriteAllText(
+                System.IO.Path.Combine(invalidSource, "missing-metadata", "SKILL.md"),
+                "# No YAML metadata");
+            var invalidRejected = false;
+            try
+            {
+                SkillInstallerService.ExportSkills(
+                    invalidSource,
+                    invalidProject,
+                    SkillExportTarget.Codex,
+                    SkillExportScope.Project);
+            }
+            catch (System.IO.InvalidDataException)
+            {
+                invalidRejected = true;
+            }
+            Assert(invalidRejected, "invalid Skill metadata must fail the export");
+            Assert(
+                !System.IO.Directory.Exists(System.IO.Path.Combine(invalidProject, ".codex", "skills")),
+                "invalid Skill metadata must fail before touching the destination");
+
+            var bundledProject = System.IO.Path.Combine(tempRoot, "bundled-project");
+            System.IO.Directory.CreateDirectory(bundledProject);
+            var bundledExport = SkillInstallerService.ExportSkills(
+                HostAssets.BundledSkillsPath,
+                bundledProject,
+                SkillExportTarget.Codex,
+                SkillExportScope.Project);
+            Assert(bundledExport.SkillCount > 0, "current bundled Skills must be exported");
+            Assert(bundledExport.FileCount > 0 &&
+                   bundledExport.FileCount == bundledExport.VerifiedFileCount &&
+                   bundledExport.Sha256Verified,
+                "the actual current build bundle must pass file count and SHA-256 verification");
+            Assert(bundledExport.Skills.Any(skill => skill.Name == "yanzi-extension-dev"),
+                "current bundled Yanzi extension skill must be present in AI-readable output");
+            var bundledSkillMarkdown = System.IO.File.ReadAllText(System.IO.Path.Combine(
+                HostAssets.BundledSkillsPath, "yanzi-extension-dev", "SKILL.md"));
+            Assert(bundledExport.Skills.Single(skill => skill.Name == "yanzi-extension-dev").MarkdownContent == bundledSkillMarkdown,
+                "exported AI-readable content must match the current bundled SKILL.md exactly");
+
+            Assert(System.IO.Directory.Exists(HostAssets.BundledSkillsPath),
+                "current running build must expose its bundled skills directory");
+            Assert(System.IO.File.Exists(System.IO.Path.Combine(
+                HostAssets.BundledSkillsPath, "yanzi-extension-dev", "SKILL.md")),
+                "current build must include the bundled Yanzi extension skill");
+        }
+        finally
+        {
+            if (System.IO.Directory.Exists(tempRoot))
+            {
+                System.IO.Directory.Delete(tempRoot, recursive: true);
+            }
+        }
     }
 
     private static void Run(string label, Func<Window> make, Action<Window> check, bool expectSubmit)
