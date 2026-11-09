@@ -124,7 +124,7 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to create or edit release; upload was n
 $filesToUpload = if ($Platform -eq "android") {
     Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -and $_.Name.EndsWith(".apk") }
 } else {
-    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -or $_.Name -match "releases\.win\.json|RELEASES" }
+    Get-ChildItem -Path $installerOutDir -File | Where-Object { $_.Name.Contains($plainVersion) -or $_.Name -match '^(assets\.win\.json|releases\.win\.json|RELEASES)$' }
 }
 
 foreach ($file in $filesToUpload) {

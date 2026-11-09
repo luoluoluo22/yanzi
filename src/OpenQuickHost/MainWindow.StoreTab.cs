@@ -12,90 +12,14 @@ public partial class MainWindow
     private const string SearchScopeStore = "store";
     private bool _isStoreLoading = false;
 
-    public bool IsStoreMode => string.Equals(SelectedSearchScope?.Key, SearchScopeStore, StringComparison.OrdinalIgnoreCase);
+    public bool IsStoreMode => false;
 
     public Visibility StoreVisibility => Visibility.Collapsed;
 
     private async Task LoadStoreExtensionsAsync()
     {
-        if (_isStoreLoading) return;
-        _isStoreLoading = true;
-
-        try
-        {
-            if (_cloudSyncClient == null) return;
-
-            StoreLoadingOverlay.Visibility = Visibility.Visible;
-
-            // 1. 后台工作线程仅抓取网络 API
-            var extensions = await Task.Run(async () =>
-            {
-                return await _cloudSyncClient.GetExtensionsAsync();
-            });
-
-            // 2. 在 UI 线程构造 CommandItem，规避 DependencyObject 跨线程实例化限制
-            var newCloudItems = new List<CommandItem>();
-            foreach (var ext in extensions)
-            {
-                var installedLocally = _localExtensionIndex.ContainsKey(ext.ExtensionId);
-                var category = string.IsNullOrWhiteSpace(ext.Category) ? "小程序商店" : ext.Category.Trim();
-                var description = string.IsNullOrWhiteSpace(ext.Description) ? "暂无简介" : ext.Description.Trim();
-                var subtitleParts = new List<string>();
-                if (installedLocally)
-                {
-                    subtitleParts.Add("已安装");
-                }
-
-                subtitleParts.Add(description);
-                if (!string.IsNullOrWhiteSpace(ext.PublisherUsername))
-                {
-                    subtitleParts.Add($"发布者：{ext.PublisherUsername}");
-                }
-
-                var command = new CommandItem(
-                    glyph: "extension",
-                    title: string.IsNullOrWhiteSpace(ext.DisplayName) ? "未知小程序" : ext.DisplayName,
-                    subtitle: string.Join(" · ", subtitleParts),
-                    category: category,
-                    accentHex: string.IsNullOrWhiteSpace(ext.AccentHex) ? "#FF3B82F6" : ext.AccentHex, // 商店颜色
-                    openTarget: null,
-                    keywords: BuildStoreKeywords(ext),
-                    source: CommandSource.Cloud,
-                    extensionId: ext.ExtensionId,
-                    declaredVersion: ext.LatestVersion,
-                    iconReference: ext.Icon
-                );
-                double simulatedRating = 4.0 + (double)(Math.Abs(ext.ExtensionId.GetHashCode()) % 10) * 0.1;
-                if (simulatedRating > 5.0 || simulatedRating < 4.0) simulatedRating = 4.8;
-                command.ApplyCloudData(ext.DisplayName, ext.LatestVersion, true, installedLocally, ext.ArchiveKey, ext.InstallCount, simulatedRating);
-
-                newCloudItems.Add(command);
-            }
-
-            _allCommands.RemoveAll(x => x.Source == CommandSource.Cloud);
-            _allCommands.AddRange(newCloudItems);
-
-            await Dispatcher.InvokeAsync(() =>
-            {
-                ApplyFilter(SearchBox.Text);
-            });
-
-            _ = Task.Run(async () =>
-            {
-                await CheckArchivesForItemsAsync(newCloudItems);
-            });
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine("Failed to load store extensions: " + ex.Message);
-            HostAssets.AppendLog("Failed to load store extensions: " + ex.Message);
-            LastRunMessage = "小程序商店加载失败：" + ex.Message;
-        }
-        finally
-        {
-            _isStoreLoading = false;
-            StoreLoadingOverlay.Visibility = Visibility.Collapsed;
-        }
+        // 市场已下线，直接返回
+        await Task.CompletedTask;
     }
 
     private async Task CheckArchivesForItemsAsync(List<CommandItem> items)

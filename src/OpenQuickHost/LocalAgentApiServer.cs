@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -388,8 +388,12 @@ public sealed partial class LocalAgentApiServer : IDisposable
             if (await TrySecureLanAsync(request, response, path)) return;
             if (request.RemoteEndPoint is { } remotePeer && !System.Net.IPAddress.IsLoopback(remotePeer.Address))
             {
-                await WriteJsonAsync(response, 426, new { error = "encrypted_lan_required", protocol = "yanzi.lan.aead.v1" });
-                return;
+                bool isSyncRoute = path is "/health" or "/v1/health" || path.StartsWith("/v1/sync/personal/", StringComparison.Ordinal);
+                if (!isSyncRoute || !IsAuthorized(request))
+                {
+                    await WriteJsonAsync(response, 426, new { error = "encrypted_lan_required", protocol = "yanzi.lan.aead.v1" });
+                    return;
+                }
             }
             if (request.HttpMethod == "OPTIONS")
             {
@@ -735,7 +739,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
                 return;
             }
 
-            if (request.HttpMethod == "GET" && path == "/health")
+            if (request.HttpMethod == "GET" && (path == "/health" || path == "/v1/health"))
             {
                 await WriteJsonAsync(response, 200, new { ok = true, service = "yanzi-local-agent-api" });
                 return;
@@ -794,6 +798,7 @@ public sealed partial class LocalAgentApiServer : IDisposable
         router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/media/read", HandleMediaReadRouteAsync);
         router.AddHandled(TryTransferSessionsAsync);
         router.AddHandled(TryHandleLanTransferApiAsync);
+        router.AddHandled(TryHandlePersonalSyncApiAsync);
         router.AddHandled(TryHandleUiApiAsync);
         router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/clipboard/sync", HandleAccountRoute10Async);
         router.Add((request, path) => request.HttpMethod == "POST" && path == "/v1/shell/run", HandleFilesRoute11Async);

@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -1738,8 +1738,16 @@ public sealed partial class PersonalSyncService
             var manifestText = await reader.ReadToEndAsync(cancellationToken);
             if (!ExtensionDevicePolicy.CanSyncInstall(manifestText)) return false;
         }
-        await ReplaceDirectoryFromPackageAsync(Path.Combine(HostAssets.ExtensionsPath, entry.ExtensionId), packageBytes, cancellationToken);
-        return true;
+        try
+        {
+            await ReplaceDirectoryFromPackageAsync(Path.Combine(HostAssets.ExtensionsPath, entry.ExtensionId), packageBytes, cancellationToken);
+            return true;
+        }
+        catch (IOException ex) when (ex.HResult == unchecked((int)0x80070020) || ex.HResult == unchecked((int)0x80070021))
+        {
+            HostAssets.AppendLog($"Personal sync extension update deferred until files are released: id={entry.ExtensionId}, reason=sharing-violation");
+            return false;
+        }
     }
 
     private static Task ReplaceDirectoryFromPackageAsync(string targetDirectory, byte[] packageBytes, CancellationToken cancellationToken)

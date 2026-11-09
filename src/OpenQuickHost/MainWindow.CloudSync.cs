@@ -1229,6 +1229,8 @@ public partial class MainWindow
 
     public void SyncLocalExtensionsToCloud(bool forceImmediate = false)
     {
+        // 策略更新：Cloudflare 官方云只同步账户密码与个人同步平台凭据，不再向 Cloudflare 上传扩展包
+        return;
         if (!HostRuntimeProfile.OwnsBackgroundServices) return;
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential)
         {
@@ -1411,6 +1413,11 @@ public partial class MainWindow
                             failCount++;
                             failedDetails.Add($"'{cmd.Title}': {ex.Message}");
                             HostAssets.AppendLog($"Failed to sync extension '{cmd.Title}': {ex.Message}");
+                            if (ex.Message.Contains("Exceeded maximum DB size", StringComparison.OrdinalIgnoreCase))
+                            {
+                                HostAssets.AppendLog("Account extension sync stopped: cloud database is over capacity. Remaining extensions were not uploaded.");
+                                break;
+                            }
                         }
                     }
                 }
@@ -1530,6 +1537,9 @@ public partial class MainWindow
     internal void RefreshMissingPrivateExtensionsFromCloud() => _ = PullMissingPrivateExtensionsFromCloudAsync();
     private async Task PullMissingPrivateExtensionsFromCloudAsync()
     {
+        // 策略更新：小程序扩展由个人同步平台（Gitee, GitHub, WebDAV 等）全权负责拉取，不再从 Cloudflare 下载
+        await Task.CompletedTask;
+        return;
         if (_cloudSyncClient == null || !_cloudSyncClient.HasCredential ||
             Interlocked.Exchange(ref _privateExtensionPullRunning, 1) != 0)
         {
@@ -5937,17 +5947,79 @@ public partial class MainWindow
         try
         {
             var settings = AppSettingsStore.Load();
+            var primaryProvider = PersonalSyncProviders.Normalize(settings.PersonalSync?.Provider);
+            var secondaryProvider = PersonalSyncProviders.Normalize(settings.PersonalSync?.SecondaryProvider ?? PersonalSyncProviders.Gitee);
+
             var result = await Task.Run(async () =>
             {
-                var service = new PersonalSyncService(settings, requireEnabled: false);
+                PersonalSyncService service;
+                string usedProvider = primaryProvider;
+
+                // 1. 如果主要提供商是 P2P，优先尝试 P2P 同步
+                if (primaryProvider == PersonalSyncProviders.P2p)
+                {
+                    bool p2pReady = false;
+                    try
+                    {
+                        var p2pCandidate = new PersonalSyncService(settings, requireEnabled: false);
+                        await p2pCandidate.ProbeAsync(CancellationToken.None);
+                        service = p2pCandidate;
+                        p2pReady = true;
+                        usedProvider = PersonalSyncProviders.P2p;
+                        HostAssets.AppendLog("[Sync] P2P 设备直连探测成功，使用 P2P 主通道同步。");
+                    }
+                    catch (Exception p2pEx)
+                    {
+                        HostAssets.AppendLog($"[Sync] P2P 直连探测未就绪: {p2pEx.Message}，自动回退到次要备份 ({secondaryProvider})。");
+                        service = null!;
+                    }
+
+                    if (!p2pReady)
+                    {
+                        var json = JsonSerializer.Serialize(settings);
+                        var fallbackSettings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                        fallbackSettings.PersonalSync.Provider = secondaryProvider;
+                        service = new PersonalSyncService(fallbackSettings, requireEnabled: false);
+                        usedProvider = secondaryProvider;
+                    }
+                }
+                else
+                {
+                    service = new PersonalSyncService(settings, requireEnabled: false);
+                }
+
                 var restored = await ExtensionStorageService.ReconcileCloudDataAsync();
                 var extensions = await service.SyncExtensionsAsync(GetPersonalConfigSyncMode());
                 var extensionData = await ExtensionStorageService.SyncPendingCloudWritesAsync();
-                return (Extensions: extensions, ExtensionData: extensionData, Restored: restored);
+
+                // 2. 如果主要同步成功完成，且启用了次要备份（Gitee），异步上传一份灾备至 Gitee
+                if (usedProvider == PersonalSyncProviders.P2p && settings.PersonalSync.EnableSecondaryBackup && secondaryProvider != PersonalSyncProviders.None)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var secJson = JsonSerializer.Serialize(settings);
+                            var secSettings = JsonSerializer.Deserialize<AppSettings>(secJson) ?? new AppSettings();
+                            secSettings.PersonalSync.Provider = secondaryProvider;
+                            var secService = new PersonalSyncService(secSettings, requireEnabled: false);
+                            await secService.SyncExtensionsAsync(PersonalConfigSyncMode.UploadOnlyBackup);
+                            HostAssets.AppendLog($"[Sync] 已自动将最新快照备份至次要渠道 ({secondaryProvider})。");
+                        }
+                        catch (Exception secEx)
+                        {
+                            HostAssets.AppendLog($"[Sync] 次要备份 ({secondaryProvider}) 异步同步失败: {secEx.Message}");
+                        }
+                    });
+                }
+
+                return (Extensions: extensions, ExtensionData: extensionData, Restored: restored, UsedProvider: usedProvider);
             });
+
             AppSettingsStore.Save(settings);
             ApplyWebDavSyncResult(result.Extensions, syncAccountImmediately: true);
-            return (true, $"{BuildPersonalSyncCompletedMessage(result.Extensions)} 扩展数据 pending 上传 {result.ExtensionData.UploadedCount}，失败 {result.ExtensionData.FailedCount}。");
+            var providerName = PersonalSyncProviders.GetDisplayName(result.UsedProvider);
+            return (true, $"[{providerName}] {BuildPersonalSyncCompletedMessage(result.Extensions)} 扩展数据 pending 上传 {result.ExtensionData.UploadedCount}，失败 {result.ExtensionData.FailedCount}。");
         }
         catch (Exception ex)
         {

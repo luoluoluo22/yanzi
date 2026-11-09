@@ -222,7 +222,16 @@ async function writeUserSyncObject(env, userId, objectId, input, writeMetadata =
              and objects.object_id = ?
              and objects.object_revision = user_sync_revisions.revision + 1
          )`
-    ).bind(now, userId, objectId)
+    ).bind(now, userId, objectId),
+    env.DB.prepare(
+      `delete from user_sync_object_history
+       where user_id = ? and object_id = ?
+         and revision not in (
+           select revision from user_sync_object_history
+           where user_id = ? and object_id = ?
+           order by revision desc limit 10
+         )`
+    ).bind(userId, objectId, userId, objectId)
   ]);
 
   if (Number(results?.[1]?.meta?.changes || 0) === 0) {

@@ -823,6 +823,20 @@ public partial class MainWindow
             var startupCommands = await Dispatcher.InvokeAsync(() => _allCommands
                 .Where(x => x.Startup?.Mode == "on_app_launch")
                 .ToList(), DispatcherPriority.Background);
+            var startupClock = System.Diagnostics.Stopwatch.StartNew();
+            var prefetchGate = new SemaphoreSlim(3);
+            var prefetchTasks = startupCommands.Select(command => PrefetchStartupExtensionAsync(command, prefetchGate)).ToArray();
+            _ = Task.WhenAll(prefetchTasks).ContinueWith(
+                task =>
+                {
+                    var error = task.Exception?.GetBaseException().Message;
+                    HostAssets.AppendLog(string.IsNullOrWhiteSpace(error)
+                        ? $"Startup extension prefetch finished: count={startupCommands.Count} elapsedMs={startupClock.ElapsedMilliseconds}"
+                        : $"Startup extension prefetch finished: count={startupCommands.Count} elapsedMs={startupClock.ElapsedMilliseconds} error={error}");
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
 
             async Task StartStartupCommandAsync(CommandItem command)
             {
@@ -876,6 +890,8 @@ public partial class MainWindow
                 await StartStartupCommandAsync(command);
             }
 
+            HostAssets.AppendLog($"Startup extensions finished: count={startupCommands.Count} elapsedMs={startupClock.ElapsedMilliseconds}");
+
             _ = Dispatcher.BeginInvoke(new Action(async () =>
             {
                 try { await RecoverInterruptedDispatchesAsync(); }
@@ -883,6 +899,25 @@ public partial class MainWindow
             }), DispatcherPriority.Background);
 
         });
+    }
+
+    private static async Task PrefetchStartupExtensionAsync(CommandItem command, SemaphoreSlim gate)
+    {
+        await gate.WaitAsync();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var prepared = await ScriptExtensionRunner.PreparePortableAssetsAsync(command);
+            HostAssets.AppendLog($"Startup extension prefetch: title={command.Title}, id={command.ExtensionId}, success={prepared.Success}, elapsedMs={clock.ElapsedMilliseconds}");
+        }
+        catch (Exception ex)
+        {
+            HostAssets.AppendLog($"Startup extension prefetch failed: title={command.Title}, id={command.ExtensionId}, error={ex.Message}");
+        }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     private ExtensionSchedulerService? _extensionScheduler;

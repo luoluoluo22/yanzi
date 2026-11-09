@@ -405,7 +405,8 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         new(PersonalSyncProviders.GitLab, "GitLab"),
         new(PersonalSyncProviders.Gitea, "Gitea"),
         new(PersonalSyncProviders.S3, "S3"),
-        new(PersonalSyncProviders.WebDav, "WebDAV")
+        new(PersonalSyncProviders.WebDav, "WebDAV"),
+        new(PersonalSyncProviders.P2p, "P2P 设备直连")
     ];
 
     public IReadOnlyList<AutoSyncDelayOption> PersonalSyncAutoSyncDelayOptions { get; } =
@@ -2126,6 +2127,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsSyncProviderGitea));
             OnPropertyChanged(nameof(IsSyncProviderS3));
             OnPropertyChanged(nameof(IsSyncProviderWebDav));
+            OnPropertyChanged(nameof(IsSyncProviderP2p));
+            OnPropertyChanged(nameof(P2pTargetPeerIp));
+            OnPropertyChanged(nameof(P2pPort));
+            OnPropertyChanged(nameof(P2pPortText));
+            OnPropertyChanged(nameof(IsClearCloudVisible));
 
             OnPropertyChanged(nameof(IsGitSyncProvider));
             RefreshWebDavSummary();
@@ -2145,6 +2151,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     public bool IsSyncProviderS3 => SelectedPersonalSyncProvider == PersonalSyncProviders.S3;
 
     public bool IsSyncProviderWebDav => SelectedPersonalSyncProvider == PersonalSyncProviders.WebDav;
+
+    public bool IsSyncProviderP2p => SelectedPersonalSyncProvider == PersonalSyncProviders.P2p;
+
+    public bool IsClearCloudVisible => !IsSyncProviderP2p;
 
     public bool IsGitSyncProvider => IsSyncProviderGitHub || IsSyncProviderGitee || IsSyncProviderGitLab || IsSyncProviderGitea;
 
@@ -2366,6 +2376,29 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     {
         get => _personalSyncSettings.S3.PathPrefix;
         set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.S3.PathPrefix = current, _personalSyncSettings.S3.PathPrefix);
+    }
+
+    public string P2pTargetPeerIp
+    {
+        get => _personalSyncSettings.P2p.TargetPeerIp;
+        set => UpdatePersonalSyncValue(value, current => _personalSyncSettings.P2p.TargetPeerIp = current, _personalSyncSettings.P2p.TargetPeerIp);
+    }
+
+    public int P2pPort => _personalSyncSettings.P2p.Port;
+
+    public string P2pPortText
+    {
+        get => _personalSyncSettings.P2p.Port.ToString();
+        set
+        {
+            if (int.TryParse(value, out var port) && port is >= 1 and <= 65535 && port != _personalSyncSettings.P2p.Port)
+            {
+                _personalSyncSettings.P2p.Port = port;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(P2pPort));
+                RefreshWebDavSummary();
+            }
+        }
     }
 
     public ObservableCollection<EnvironmentVariableEditorItem> EnvironmentVariables { get; }
@@ -5153,6 +5186,69 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         }
     }
 
+
+    private void OpenP2pWorkbenchButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var p2pCmd = _mainWindow.GetAllCommands().FirstOrDefault(c => string.Equals(c.ExtensionId, "p2p", StringComparison.OrdinalIgnoreCase));
+            if (p2pCmd != null)
+            {
+                _mainWindow.ExecuteCommandExternally(p2pCmd, launchSource: "settings-sync-p2p");
+            }
+            else
+            {
+                System.Windows.MessageBox.Show(this, "未找到 P2P 协作工作台小程序，请检查是否已安装。", "P2P", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, "打开 P2P 协作工作台失败：" + ex.Message, "P2P", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void DetectP2pPeerButton_Click(object sender, RoutedEventArgs e)
+    {
+        WebDavStatusText = "正在探测本地 EasyTier 组网在线设备...";
+        try
+        {
+            var detectedIp = await P2pPersonalSyncBackend.DiscoverPeerIpAsync(CancellationToken.None);
+            if (!string.IsNullOrWhiteSpace(detectedIp))
+            {
+                P2pTargetPeerIp = detectedIp;
+                WebDavStatusText = $"已自动发现并填入对端设备 IP：{detectedIp}";
+                System.Windows.MessageBox.Show(this, $"已探测到在线组网设备：\n{detectedIp}\n\n已自动填入目标设备 IP。", "发现对端设备", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                WebDavStatusText = "未在本地 EasyTier 组网中发现其他在线设备。";
+                System.Windows.MessageBox.Show(this, "未探测到其他在线组网设备。\n\n请确认对端设备已启动 EasyTier 并加入相同网络，或手动填入目标 IP。", "探测提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            WebDavStatusText = $"探测失败: {ex.Message}";
+            System.Windows.MessageBox.Show(this, $"探测在线对端出错：{ex.Message}", "探测提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void TestP2pConnectionButton_Click(object sender, RoutedEventArgs e)
+    {
+        WebDavStatusText = "正在探测 P2P 目标设备与组网状态...";
+        try
+        {
+            var backend = new P2pPersonalSyncBackend(_personalSyncSettings.P2p);
+            await backend.ProbeAsync(CancellationToken.None);
+            WebDavStatusText = $"P2P 直连探测成功！目标已在线：{backend.DisplayRoot}";
+            System.Windows.MessageBox.Show(this, $"P2P 直连探测成功！\n目标地址：{backend.DisplayRoot}", "P2P 测试成功", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            WebDavStatusText = $"P2P 探测失败: {ex.Message}";
+            System.Windows.MessageBox.Show(this, $"P2P 设备直连探测失败：\n{ex.Message}\n\n请确保目标设备已启动并开启 EasyTier 局域网组网。", "P2P 测试提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void SetPersonalSyncButtonsEnabled(bool enabled)
     {
         if (TestPersonalSyncButton != null) TestPersonalSyncButton.IsEnabled = enabled;
@@ -6385,6 +6481,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
         WebDavStatusText = SelectedPersonalSyncProvider switch
         {
+            var provider when provider == PersonalSyncProviders.P2p =>
+                string.IsNullOrWhiteSpace(P2pTargetPeerIp)
+                    ? "已选择 P2P 直连，支持自动发现组网设备或填写目标 IP。"
+                    : $"P2P 直连：{P2pTargetPeerIp}:{P2pPort}",
             var provider when provider == PersonalSyncProviders.WebDav =>
                 string.IsNullOrWhiteSpace(_personalSyncSecrets.WebDavPassword)
                     ? "已启用 WebDAV，但还未设置密码。"

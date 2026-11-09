@@ -111,9 +111,10 @@ internal static class AiChatHtmlContent
                 var alt = node.GetAttributeValue("alt", string.Empty);
                 var src = SafeExternalUri(node.GetAttributeValue("src", string.Empty));
                 var description = string.IsNullOrWhiteSpace(alt) ? "图片" : alt;
-                output.Add(src is null
-                    ? new Run("[图片: " + description + "]")
-                    : MakeLink("[图片: " + description + "]", src));
+                if (src is null)
+                    AiChatEmoji.AppendRuns(output, "[图片: " + description + "]");
+                else
+                    output.Add(MakeLink("[图片: " + description + "]", src));
                 continue;
             }
             if (tag == "table")
@@ -151,7 +152,7 @@ internal static class AiChatHtmlContent
 
             if (tag == "pre")
             {
-                span.Inlines.Add(new Run(WebUtility.HtmlDecode(node.InnerText)));
+                AiChatEmoji.AppendRuns(span.Inlines, WebUtility.HtmlDecode(node.InnerText));
             }
             else
             {
@@ -188,12 +189,13 @@ internal static class AiChatHtmlContent
 
     private static Hyperlink MakeLink(string title, Uri uri)
     {
-        var link = new Hyperlink(new Run(string.IsNullOrWhiteSpace(title) ? uri.AbsoluteUri : title))
+        var link = new Hyperlink
         {
             NavigateUri = uri,
             Cursor = System.Windows.Input.Cursors.Hand,
             TextDecorations = TextDecorations.Underline
         };
+        AiChatEmoji.AppendRuns(link.Inlines, string.IsNullOrWhiteSpace(title) ? uri.AbsoluteUri : title);
         link.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(96, 165, 250));
         link.RequestNavigate += (_, args) =>
         {
@@ -233,12 +235,12 @@ internal static class AiChatHtmlContent
                 var cell = cells[col];
                 var label = new TextBlock
                 {
-                    Text = GetPlainText(cell).Trim(),
                     TextWrapping = TextWrapping.Wrap,
                     Padding = new Thickness(6, 5, 6, 5),
                     FontSize = 13,
                     FontWeight = cell.Name == "th" ? FontWeights.SemiBold : FontWeights.Normal
                 };
+                AiChatEmoji.SetText(label, GetPlainText(cell).Trim());
                 label.SetResourceReference(TextBlock.ForegroundProperty, "Yanzi.Color.Foreground");
                 var border = new Border { BorderThickness = new Thickness(0.5), Child = label };
                 border.SetResourceReference(Border.BorderBrushProperty, "Yanzi.Color.Border");

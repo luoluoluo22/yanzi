@@ -7,6 +7,12 @@ namespace OpenQuickHost;
 /// performs this work on a background thread; no WPF dispatcher access is required.
 /// An in-process revision complements filesystem metadata (e.g. same-size writes).
 /// </summary>
+internal static class AiChatLogLimits
+{
+    internal const int RecentLines = 250;
+    internal const long MaxBytes = 2_000_000;
+}
+
 internal sealed class AiChatLogSnapshotCache
 {
     private readonly object _gate = new();
@@ -61,7 +67,7 @@ internal sealed class AiChatLogSnapshotCache
 
                 var selected = _lines.Where(line => allTopics || string.IsNullOrEmpty(topicId) ||
                         line.Contains("|topic=" + topicId + "|", StringComparison.Ordinal))
-                    .TakeLast(250).ToArray();
+                    .TakeLast(AiChatLogLimits.RecentLines).ToArray();
                 var result = selected.Length > 0 ? string.Join(Environment.NewLine, selected)
                     : "当前对话尚无请求日志，可勾选「显示全部对话」查看其他记录。";
                 _filteredTopic = topicId;

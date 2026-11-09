@@ -202,7 +202,8 @@ public static class LocalExtensionCatalog
             toggleWindow: manifest.ToggleWindow ?? true,
             workingDirectory: manifest.WorkingDirectory,
             runAsAdmin: manifest.RunAsAdmin ?? false,
-            waitForExit: manifest.WaitForExit ?? true);
+            waitForExit: manifest.WaitForExit ?? true,
+            deferIconResolution: true);
     }
 
     public static void SetExtensionPublishedState(string extensionId, bool isPublished)
@@ -731,7 +732,8 @@ public static class YanziAction
             toggleWindow: manifest.ToggleWindow ?? true,
             workingDirectory: manifest.WorkingDirectory,
             runAsAdmin: manifest.RunAsAdmin ?? false,
-            waitForExit: manifest.WaitForExit ?? true);
+            waitForExit: manifest.WaitForExit ?? true,
+            deferIconResolution: true);
     }
 
     public static string LoadManifestJson(string extensionId)

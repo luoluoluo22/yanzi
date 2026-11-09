@@ -381,6 +381,12 @@ public static class KeyboardDoubleTapService
             case VkRControl:
                 return HandleControlKeyDown(vkCode);
             case VkLMenu:
+                if (HasOtherModifiersPressed(ModifierTapKind.Alt))
+                {
+                    _sequenceDirty = true;
+                    _lastTapKind = ModifierTapKind.None;
+                    _lastTapTimestamp = 0;
+                }
                 if (ShouldSuppressCurrentAltTap())
                 {
                     _leftAltDown = true;
@@ -391,6 +397,12 @@ public static class KeyboardDoubleTapService
                 _leftAltDown = true;
                 return false;
             case VkRMenu:
+                if (HasOtherModifiersPressed(ModifierTapKind.Alt))
+                {
+                    _sequenceDirty = true;
+                    _lastTapKind = ModifierTapKind.None;
+                    _lastTapTimestamp = 0;
+                }
                 if (ShouldSuppressCurrentAltTap())
                 {
                     _rightAltDown = true;
@@ -419,7 +431,12 @@ public static class KeyboardDoubleTapService
             ReleaseWinForYanmHold("key-passthrough");
         }
 
-        _sequenceDirty = true;
+        if (IsAnyModifierDown())
+        {
+            _sequenceDirty = true;
+        }
+        _lastTapKind = ModifierTapKind.None;
+        _lastTapTimestamp = 0;
         return false;
     }
 
@@ -430,6 +447,13 @@ public static class KeyboardDoubleTapService
         if (isLeft ? _leftCtrlDown : _rightCtrlDown)
         {
             return _triggeredCtrlVk == vkCode;
+        }
+
+        if (HasOtherModifiersPressed(ModifierTapKind.Control))
+        {
+            _sequenceDirty = true;
+            _lastTapKind = ModifierTapKind.None;
+            _lastTapTimestamp = 0;
         }
 
         // The first tap has already been completed on key-up. Recognize the second
@@ -512,7 +536,10 @@ public static class KeyboardDoubleTapService
                 _rightWinDown = false;
                 return IsYanmTriggerKey(YanmActivationKeys.Win) ? HandleYanmTriggerUp(YanmActivationKeys.Win) : false;
             default:
-                _sequenceDirty = true;
+                if (IsAnyModifierDown())
+                {
+                    _sequenceDirty = true;
+                }
                 return false;
         }
 
@@ -716,6 +743,11 @@ public static class KeyboardDoubleTapService
         {
             return string.Empty;
         }
+    }
+
+    private static bool IsAnyModifierDown()
+    {
+        return _leftCtrlDown || _rightCtrlDown || _leftAltDown || _rightAltDown || _leftShiftDown || _rightShiftDown || _leftWinDown || _rightWinDown || _capsLockDown;
     }
 
     private static bool HasNonWinModifiersPressed()

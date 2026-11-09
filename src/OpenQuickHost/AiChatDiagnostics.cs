@@ -5,12 +5,8 @@ using System.Windows.Controls;
 using TextBox = System.Windows.Controls.TextBox;
 using CheckBox = System.Windows.Controls.CheckBox;
 using Button = System.Windows.Controls.Button;
-using Color = System.Windows.Media.Color;
-using Brushes = System.Windows.Media.Brushes;
 using Orientation = System.Windows.Controls.Orientation;
 using Clipboard = System.Windows.Clipboard;
-using FontFamily = System.Windows.Media.FontFamily;
-using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace OpenQuickHost;
@@ -33,7 +29,7 @@ internal static class AiChatDiagnostics
             lock (Gate)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
-                if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 2_000_000)
+                if (File.Exists(LogPath) && new FileInfo(LogPath).Length > AiChatLogLimits.MaxBytes)
                 {
                     File.Move(LogPath, LogPath + ".old", true);
                 }
@@ -63,6 +59,28 @@ internal static class AiChatDiagnostics
 
     // Manual refresh bypasses cached snapshots even when an external writer preserves metadata.
     internal static void ForceReload() => Interlocked.Increment(ref _logRevision);
+
+    internal static void Clear()
+    {
+        try
+        {
+            lock (Gate)
+            {
+                TryDelete(LogPath);
+                TryDelete(LogPath + ".old");
+                Interlocked.Increment(ref _logRevision);
+            }
+        }
+        catch
+        {
+            // Diagnostics must never break the log window.
+        }
+    }
+
+    private static void TryDelete(string path)
+    {
+        if (File.Exists(path)) File.Delete(path);
+    }
 }
 
 internal sealed class AiChatLogWindow : Window
@@ -86,9 +104,19 @@ internal sealed class AiChatLogWindow : Window
         MinWidth = 560;
         MinHeight = 340;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(Color.FromRgb(24, 24, 24));
-        Foreground = Brushes.White;
         ShowInTaskbar = false;
+        Yanzi.UI.Wpf.YanziUi.ApplyTo(this,
+            string.Equals(AppSettingsStore.Load().ThemeMode, "Light", StringComparison.OrdinalIgnoreCase)
+                ? Yanzi.UI.Wpf.YanziTheme.Light : Yanzi.UI.Wpf.YanziTheme.Dark);
+        SetResourceReference(BackgroundProperty, "Yanzi.Color.Background");
+        SetResourceReference(ForegroundProperty, "Yanzi.Color.Foreground");
+        SetResourceReference(System.Windows.Documents.TextElement.FontFamilyProperty, "Yanzi.Font.Geist");
+        SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "Yanzi.Color.Foreground");
+        void UseSharedScrollbar(FrameworkElement element)
+        {
+            if (TryFindResource(Yanzi.UI.Wpf.YanziUi.Styles.Scrollbar) is Style scrollbar)
+                element.Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)] = scrollbar;
+        }
 
         var layout = new Grid { Margin = new Thickness(16) };
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -96,44 +124,54 @@ internal sealed class AiChatLogWindow : Window
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 10) };
-        _all = new CheckBox { Content = "显示全部对话", VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brushes.White, Margin = new Thickness(0, 0, 12, 0) };
+        _all = Yanzi.UI.Wpf.YanziUi.WithStyle(new CheckBox
+        {
+            Content = "显示全部对话", VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0)
+        }, Yanzi.UI.Wpf.YanziUi.Styles.CheckBoxPreview);
         _all.Checked += (_, _) => Reload();
         _all.Unchecked += (_, _) => Reload();
         actions.Children.Add(_all);
-        var refresh = new Button { Content = "刷新", MinWidth = 65, Margin = new Thickness(0, 0, 8, 0) };
+        var refresh = Yanzi.UI.Wpf.YanziUi.WithStyle(new Button
+        {
+            Content = "刷新", MinWidth = 72, Margin = new Thickness(0, 0, 8, 0)
+        }, Yanzi.UI.Wpf.YanziUi.Styles.OutlineButton);
         refresh.Click += (_, _) => { AiChatDiagnostics.ForceReload(); Reload(force: true); };
         actions.Children.Add(refresh);
-        var copy = new Button { Content = "复制日志", MinWidth = 80 };
+        var copy = Yanzi.UI.Wpf.YanziUi.WithStyle(new Button
+        {
+            Content = "复制日志", MinWidth = 88, Margin = new Thickness(0, 0, 8, 0)
+        }, Yanzi.UI.Wpf.YanziUi.Styles.OutlineButton);
         copy.Click += (_, _) => CopyLog();
         actions.Children.Add(copy);
+        var clear = Yanzi.UI.Wpf.YanziUi.WithStyle(new Button
+        {
+            Content = "清除日志", MinWidth = 88
+        }, Yanzi.UI.Wpf.YanziUi.Styles.DestructiveButton);
+        clear.Click += (_, _) => ClearLog();
+        actions.Children.Add(clear);
         Grid.SetRow(actions, 0);
         layout.Children.Add(actions);
 
-        _text = new TextBox
+        _text = Yanzi.UI.Wpf.YanziUi.WithStyle(new TextBox
         {
             IsReadOnly = true,
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.NoWrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            FontFamily = new FontFamily("Consolas"),
-            FontSize = 12,
-            Padding = new Thickness(12),
-            Background = new SolidColorBrush(Color.FromRgb(16, 16, 16)),
-            Foreground = new SolidColorBrush(Color.FromRgb(222, 222, 222)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(66, 66, 66))
-        };
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+        }, Yanzi.UI.Wpf.YanziUi.Styles.Textarea);
+        UseSharedScrollbar(_text);
         Grid.SetRow(_text, 1);
         layout.Children.Add(_text);
 
-        var location = new TextBlock
+        var location = Yanzi.UI.Wpf.YanziUi.WithStyle(new TextBlock
         {
-            Text = "本机日志：" + AiChatDiagnostics.LogPath + "    ·    不包含 API Key、请求正文或回复内容",
-            Foreground = Brushes.Gray,
+            Text = "本机日志：" + AiChatDiagnostics.LogPath +
+                "    ·    不包含 API Key、请求正文或回复内容" +
+                "    ·    单文件超过 " + (AiChatLogLimits.MaxBytes / 1_000_000) +
+                " MB 自动轮转，界面显示最近 " + AiChatLogLimits.RecentLines + " 条",
             TextTrimming = TextTrimming.CharacterEllipsis,
             Margin = new Thickness(0, 10, 0, 0)
-        };
+        }, Yanzi.UI.Wpf.YanziUi.Styles.TextSecondary);
         Grid.SetRow(location, 2);
         layout.Children.Add(location);
         Content = layout;
@@ -152,6 +190,12 @@ internal sealed class AiChatLogWindow : Window
     private void CopyLog()
     {
         if (!string.IsNullOrEmpty(_text.Text)) Clipboard.SetText(_text.Text);
+    }
+
+    private void ClearLog()
+    {
+        AiChatDiagnostics.Clear();
+        Reload(force: true);
     }
 
     private void Reload(bool force = false)

@@ -1,6 +1,9 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using OpenQuickHost.Sync;
@@ -85,6 +88,54 @@ public partial class RunningExtensionsWindow : Window
         ScheduleRefresh("manual", reloadCatalog: true);
     }
 
+    private void ExtensionListView_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject source)
+            return;
+        var row = FindAncestor<System.Windows.Controls.ListViewItem>(source);
+        if (row?.DataContext is not RunningExtensionItemViewModel item)
+            return;
+
+        ExtensionListView.SelectedItem = item;
+        var menu = new ContextMenu
+        {
+            PlacementTarget = row,
+            Placement = PlacementMode.MousePoint
+        };
+        var edit = new MenuItem { Header = "编辑小程序" };
+        edit.Click += async (_, _) => await EditRunningExtensionAsync(item);
+        menu.Items.Add(edit);
+        menu.Items.Add(new Separator());
+        var terminate = new MenuItem { Header = "强制结束" };
+        terminate.Click += (_, _) => TerminateItem(item);
+        menu.Items.Add(terminate);
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private async Task EditRunningExtensionAsync(RunningExtensionItemViewModel item)
+    {
+        var host = System.Windows.Application.Current?.MainWindow as MainWindow
+            ?? System.Windows.Application.Current?.Windows.OfType<MainWindow>().FirstOrDefault();
+        if (host == null)
+        {
+            System.Windows.MessageBox.Show(this, "燕子主窗口不可用，暂时不能编辑。", "编辑小程序", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var result = await host.EditExtensionFromSettingsAsync(item.ExtensionId, this);
+        if (!result.ok)
+        {
+            if (!string.IsNullOrWhiteSpace(result.message))
+            {
+                System.Windows.MessageBox.Show(this, result.message, "编辑小程序失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            return;
+        }
+
+        ScheduleRefresh("edit", reloadCatalog: true);
+    }
+
     private void TerminateButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: Guid instanceId })
@@ -97,6 +148,11 @@ public partial class RunningExtensionsWindow : Window
             return;
         }
 
+        TerminateItem(target);
+    }
+
+    private void TerminateItem(RunningExtensionItemViewModel target)
+    {
         var confirm = System.Windows.MessageBox.Show(
             this,
             $"确定要强制结束扩展“{target.Title}”吗？",
@@ -106,7 +162,7 @@ public partial class RunningExtensionsWindow : Window
         if (confirm != MessageBoxResult.Yes)
             return;
 
-        var success = RunningExtensionRegistry.TryTerminate(instanceId, out var message);
+        var success = RunningExtensionRegistry.TryTerminate(target.InstanceId, out var message);
         if (!success)
         {
             System.Windows.MessageBox.Show(
@@ -282,6 +338,18 @@ public partial class RunningExtensionsWindow : Window
             EmptyStateTextBlock.Visibility = emptyVisibility;
 
         return changes;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? source) where T : DependencyObject
+    {
+        while (source != null)
+        {
+            if (source is T match)
+                return match;
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return null;
     }
 
     private sealed class RunningExtensionItemViewModel
