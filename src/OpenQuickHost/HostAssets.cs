@@ -74,6 +74,9 @@ public static class HostAssets
 
     public static string SkillsPath => ResolveDataDirectoryPath("skills");
 
+    // Read-only source shipped with the currently running Yanzi build; never use the mutable legacy data copy for exports.
+    public static string BundledSkillsPath => Path.Combine(InstallRootPath, "skills");
+
     public static string DocsReadmePath => Path.Combine(DocsPath, "README.txt");
 
     public static string LogsPath => ResolveDataDirectoryPath("logs");

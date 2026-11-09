@@ -2942,14 +2942,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var previewPath = SkillInstallerService.GetExportPath(destinationRoot, optionsDialog.SelectedTarget, optionsDialog.SelectedScope);
+            // The export service resolves and returns the final destination path.
             var result = SkillInstallerService.ExportSkills(
-                HostAssets.SkillsPath,
+                HostAssets.BundledSkillsPath,
                 destinationRoot,
                 optionsDialog.SelectedTarget,
                 optionsDialog.SelectedScope);
-            LastRunMessage = $"已导出 {result.SkillCount} 个 Skill 到 {result.Target} {result.Scope}";
-            SyncStatus = $"已导出到 {previewPath}（相对路径：{result.RelativePath}）";
+            LastRunMessage = $"已导出 {result.SkillCount} 个 Skill、{result.FileCount} 个文件，SHA-256 校验通过";
+            SyncStatus = $"已导出到 {result.ExportedPath}（相对路径：{result.RelativePath}）";
+
+            var successDialog = new SkillExportSuccessWindow(result)
+            {
+                Owner = this
+            };
+            successDialog.ShowDialog();
         }
         catch (Exception ex)
         {
