@@ -94,6 +94,7 @@ public sealed partial class CloudSyncClient
     }
     public async Task<ClientWebSocket> ConnectDeviceRelayAsync(string deviceId, CancellationToken cancellationToken)
     {
+        EnsureCloudEnabled();
         await EnsureAuthenticatedAsync(cancellationToken);
         var endpoint = new UriBuilder(new Uri(new Uri(_options.BaseUrl.TrimEnd('/') + "/"),
             "v1/me/mobile/messages/ws?deviceId=" + Uri.EscapeDataString(deviceId)));
@@ -123,6 +124,7 @@ public sealed partial class CloudSyncClient
     {
         var info = new FileInfo(filePath);
         if (info.Length <= 0 || info.Length > 30L * 1024 * 1024) throw new InvalidOperationException("附件大小需为 1 字节至 30 MB。");
+        EnsureCloudEnabled();
         await EnsureAuthenticatedAsync(cancellationToken);
         string hash;
         using (var input = File.OpenRead(filePath)) hash = Convert.ToHexString(await SHA256.HashDataAsync(input, cancellationToken)).ToLowerInvariant();
@@ -150,6 +152,7 @@ public sealed partial class CloudSyncClient
     public async Task<string> DownloadMobileAttachmentAsync(string attachmentId, string directory, CancellationToken cancellationToken = default)
     {
         if (!System.Text.RegularExpressions.Regex.IsMatch(attachmentId, "^att_[a-f0-9]{32}$")) throw new IOException("附件编号无效。");
+        EnsureCloudEnabled();
         await EnsureAuthenticatedAsync(cancellationToken);
         using var metadataRequest = CreateRequest(HttpMethod.Get, "/v1/me/mobile/attachments/" + attachmentId, true);
         using var metadataResponse = await SendAsyncWithFallback(metadataRequest, cancellationToken);

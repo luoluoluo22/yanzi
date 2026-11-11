@@ -183,7 +183,8 @@ internal static class AccountExtensionDataStore
     }
 
     private static bool CanAttemptAccountCloud(CloudSyncClient client) =>
-        !string.IsNullOrWhiteSpace(client.CurrentUserId) || client.HasCredential;
+        client.IsConfigured &&
+        (!string.IsNullOrWhiteSpace(client.CurrentUserId) || client.HasCredential);
 
     internal static JsonElement CreatePayloadElement(
         string extensionId,

@@ -61,11 +61,21 @@ public sealed partial class CloudSyncClient
     public CloudSyncClient(SyncOptions options, AccountSyncCoordinator? coordinator = null)
     {
         AccountCoordinator = coordinator ?? new AccountSyncCoordinator();
-        _options = options;
-        _httpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromSeconds(30));
-        _directHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromSeconds(30));
-        _largeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: true, TimeSpan.FromMinutes(10));
-        _directLargeTransferHttpClient = CreateHttpClient(options.BaseUrl, useProxy: false, TimeSpan.FromMinutes(10));
+        _options = SyncOptions.WithoutRetiredHost(options);
+        if (_options.IsConfigured)
+        {
+            _httpClient = CreateHttpClient(_options.BaseUrl, useProxy: true, TimeSpan.FromSeconds(30));
+            _directHttpClient = CreateHttpClient(_options.BaseUrl, useProxy: false, TimeSpan.FromSeconds(30));
+            _largeTransferHttpClient = CreateHttpClient(_options.BaseUrl, useProxy: true, TimeSpan.FromMinutes(10));
+            _directLargeTransferHttpClient = CreateHttpClient(_options.BaseUrl, useProxy: false, TimeSpan.FromMinutes(10));
+        }
+        else
+        {
+            _httpClient = CreateIdleClient(TimeSpan.FromSeconds(30));
+            _directHttpClient = CreateIdleClient(TimeSpan.FromSeconds(30));
+            _largeTransferHttpClient = CreateIdleClient(TimeSpan.FromMinutes(10));
+            _directLargeTransferHttpClient = CreateIdleClient(TimeSpan.FromMinutes(10));
+        }
         _session = SyncSessionStore.Load();
         _credential = SecureCredentialStore.Load();
     }
@@ -107,6 +117,8 @@ public sealed partial class CloudSyncClient
             : !string.IsNullOrWhiteSpace(_credential?.LoginEmail)
                 ? _credential!.LoginEmail
                 : "未登录";
+
+    public bool IsConfigured => _options.IsConfigured;
 
     public string? CurrentUserId => _session?.UserId;
     internal string TaskJournalAccount => _options.BaseUrl.TrimEnd('/') + "\n" + CurrentUserId;
@@ -1250,6 +1262,7 @@ public sealed partial class CloudSyncClient
 
     public async Task<HttpResponseMessage> GetMobileMessagesEventsStreamAsync(string deviceId, CancellationToken cancellationToken)
     {
+        EnsureCloudEnabled();
         var generation = AccountCoordinator.Generation;
         ThrowIfTransportCoolingDown(cancellationToken);
         await EnsureAuthenticatedAsync(cancellationToken);
@@ -1584,7 +1597,7 @@ public sealed partial class CloudSyncClient
 
     public async Task<WebDavConfigDto?> FetchWebDavConfigAsync(CancellationToken cancellationToken = default)
     {
-        if (!HasValidSession())
+        if (!_options.IsConfigured || !HasValidSession())
         {
             CloudSyncDiagnostics.Log("CloudSyncClient.Config", "Fetch legacy WebDAV config skipped: no valid session");
             return null;

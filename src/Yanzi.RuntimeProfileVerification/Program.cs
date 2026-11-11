@@ -43,6 +43,28 @@ try
     Check(Equals(stableBefore, ReadStartup("Yanzi")) &&
           Equals(runtimeBefore, ReadStartup("Yanzi.Runtime")),
           "Non-installed executable unexpectedly modified production startup registration");
+    if (!expectDev)
+    {
+        Check(!SyncConfigLoader.Load().IsConfigured, "Missing sync settings stayed configured");
+        File.WriteAllText(SyncConfigLoader.ConfigPath, """
+            {
+              "baseUrl": "https://sync.luoluoluo.cc.cd"
+            }
+            """);
+        var retired = SyncConfigLoader.Load();
+        Check(!retired.IsConfigured, "Retired cloud host stayed configured");
+        Check(!File.ReadAllText(SyncConfigLoader.ConfigPath).Contains("sync.luoluoluo.cc.cd", StringComparison.OrdinalIgnoreCase),
+            "Retired cloud host was not removed from syncsettings");
+        File.WriteAllText(SyncConfigLoader.ConfigPath, """
+            {
+              "baseUrl": "https://example.test"
+            }
+            """);
+        var custom = SyncConfigLoader.Load();
+        Check(custom.IsConfigured && custom.BaseUrl == "https://example.test", "Custom sync host was discarded");
+        var disabled = new CloudSyncClient(new SyncOptions());
+        Check(!disabled.IsConfigured, "Empty sync client stayed configured");
+    }
     if (expectDev)
     {
         Check(!saved.PersonalSync.Enabled, "Dev enabled personal sync");

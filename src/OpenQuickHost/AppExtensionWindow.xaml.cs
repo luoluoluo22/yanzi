@@ -36,6 +36,8 @@ public partial class AppExtensionWindow : Window
     private readonly string _initialInput;
     private readonly string _launchSource;
     private readonly AppExtensionDefinition _definition;
+    private bool _activationRequested;
+    private bool _initializationCompleted;
     private static CoreWebView2Environment? _environment;
 
     public AppExtensionWindow(CommandItem command, string? initialInput, string launchSource)
@@ -103,7 +105,7 @@ public partial class AppExtensionWindow : Window
             return false;
         }
 
-        if (activate) existingWindow.Dispatcher.Invoke(existingWindow.BringToFront);
+        if (activate) existingWindow.Dispatcher.Invoke(existingWindow.RequestActivation);
         return true;
     }
 
@@ -254,14 +256,30 @@ public partial class AppExtensionWindow : Window
     private async void AppExtensionWindow_Loaded(object sender, RoutedEventArgs e)
     {
         Loaded -= AppExtensionWindow_Loaded;
-        await InitializeAsync();
-        if (_definition.RunInBackground)
-        {
-            if (HostWebViewEventBridge.IsBackgroundLaunchSource(_launchSource))
-            { Hide(); WindowState = WindowState.Normal; }
-        }
-    }
 
+        var isBackgroundLaunch = HostWebViewEventBridge.IsBackgroundLaunchSource(_launchSource);
+        var shouldActivate = !isBackgroundLaunch || _activationRequested;
+        if (shouldActivate)
+        {
+            BringToFront();
+        }
+
+        await InitializeAsync();
+        _initializationCompleted = true;
+
+        // 后台预加载窗口若在初始化期间收到用户打开请求，不得在初始化结束时再次隐藏。
+        if (_definition.RunInBackground && isBackgroundLaunch && !_activationRequested)
+        {
+            Hide();
+            WindowState = WindowState.Normal;
+        }
+        else if ((shouldActivate || _activationRequested) && IsVisible)
+        {
+            BringToFront();
+        }
+
+        _activationRequested = false;
+    }
     private void AppExtensionWindow_SourceInitialized(object? sender, EventArgs e)
     {
         ApplyDarkWindowTheme();
@@ -1026,6 +1044,16 @@ public partial class AppExtensionWindow : Window
         ErrorPanel.Visibility = Visibility.Visible;
     }
 
+    private void RequestActivation()
+    {
+        _activationRequested = true;
+        if (_initializationCompleted)
+        {
+            BringToFront();
+            _activationRequested = false;
+        }
+    }
+
     private void BringToFront()
     {
         ShowInTaskbar = true;
@@ -1036,17 +1064,76 @@ public partial class AppExtensionWindow : Window
             WindowState = WindowState.Normal;
         }
 
+        // 后台预加载会先最小化。第一次恢复时坐标可能停在系统的离屏位置，窗口看起来没有到前台。
+        PlaceOnScreenIfParked();
         Show();
         Activate();
-        Focus();
-        Topmost = true;
-        Topmost = false;
 
         var handle = new WindowInteropHelper(this).Handle;
-        if (handle != IntPtr.Zero)
+        if (handle == IntPtr.Zero)
         {
-            _ = SetForegroundWindow(handle);
+            Focus();
+            return;
         }
+
+        if (Win32Native.GetForegroundWindow() != handle)
+        {
+            var recovered = WindowSensorHelper.ForceSetForegroundWindow(handle);
+            if (Win32Native.GetForegroundWindow() != handle)
+            {
+                Topmost = true;
+                Topmost = false;
+                recovered = WindowSensorHelper.ForceSetForegroundWindow(handle) || recovered;
+            }
+
+            if (Win32Native.GetForegroundWindow() != handle)
+            {
+                HostAssets.AppendLog($"App window foreground denied: id={_command.ExtensionId}, hwnd=0x{handle.ToInt64():X}, foreground=0x{Win32Native.GetForegroundWindow().ToInt64():X}, recovered={recovered}.");
+            }
+        }
+
+        if (Win32Native.GetForegroundWindow() == handle)
+        {
+            Focus();
+        }
+    }
+
+    private void PlaceOnScreenIfParked()
+    {
+        var width = Width > 1 && !double.IsNaN(Width) ? Width : Math.Max(MinWidth, 1180);
+        var height = Height > 1 && !double.IsNaN(Height) ? Height : Math.Max(MinHeight, 760);
+        var virtualScreen = new Rect(
+            SystemParameters.VirtualScreenLeft,
+            SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth,
+            SystemParameters.VirtualScreenHeight);
+        var onScreen = !double.IsNaN(Left) && !double.IsNaN(Top) && Left > -16000 && Top > -16000;
+        if (onScreen)
+        {
+            var visible = Rect.Intersect(new Rect(Left, Top, width, height), virtualScreen);
+            onScreen = !visible.IsEmpty && visible.Width >= 48 && visible.Height >= 48;
+        }
+
+        if (onScreen)
+        {
+            return;
+        }
+
+        var work = ScreenHelper.GetScreenContextAtPoint().DipWorkArea;
+        if (work.Width < 48 || work.Height < 48)
+        {
+            return;
+        }
+
+        var desired = new Rect(
+            work.Left + Math.Max(0, (work.Width - width) / 2),
+            work.Top + Math.Max(0, (work.Height - height) / 2),
+            width,
+            height);
+        var clamped = ScreenHelper.ClampToWorkArea(desired, work);
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = clamped.Left;
+        Top = clamped.Top;
     }
 
     private void ApplyDarkWindowTheme()
@@ -1133,9 +1220,6 @@ public partial class AppExtensionWindow : Window
         handled = false;
         return (IntPtr)HtClient;
     }
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     private static extern bool ReleaseCapture();

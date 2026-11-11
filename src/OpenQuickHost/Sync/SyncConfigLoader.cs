@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace OpenQuickHost.Sync;
 
@@ -22,12 +23,28 @@ public static class SyncConfigLoader
         try
         {
             var json = File.ReadAllText(ConfigPath);
-            var options = JsonSerializer.Deserialize<SyncOptions>(json, JsonOptions);
-            return options ?? new SyncOptions();
+            var options = JsonSerializer.Deserialize<SyncOptions>(json, JsonOptions) ?? new SyncOptions();
+            if (!SyncOptions.IsRetiredHost(options.BaseUrl)) return options;
+            ClearRetiredBaseUrl(json);
+            return new SyncOptions { BaseUrl = string.Empty };
         }
         catch
         {
             return new SyncOptions();
+        }
+    }
+
+    private static void ClearRetiredBaseUrl(string json)
+    {
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject document) return;
+            document["baseUrl"] = "";
+            File.WriteAllText(ConfigPath, document.ToJsonString(JsonOptions));
+        }
+        catch
+        {
+            // The in-memory result stays unconfigured even if the file cannot be rewritten.
         }
     }
 

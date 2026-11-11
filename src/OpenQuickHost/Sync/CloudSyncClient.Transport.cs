@@ -61,6 +61,7 @@ public sealed partial class CloudSyncClient
 
     private async Task<HttpResponseMessage> SendAsyncWithFallback(HttpRequestMessage request, CancellationToken cancellationToken, bool largeTransfer = false)
     {
+        EnsureCloudEnabled();
         ThrowIfTransportCoolingDown(cancellationToken);
         var generation = request.Options.TryGetValue(SessionGenerationKey, out var savedGeneration)
             ? savedGeneration : AccountCoordinator.Generation;
@@ -147,6 +148,17 @@ public sealed partial class CloudSyncClient
         MaxConnectionsPerServer = 8,
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         PooledConnectionIdleTimeout = TimeSpan.FromMinutes(1)
+    };
+
+    private void EnsureCloudEnabled()
+    {
+        if (_options.IsConfigured) return;
+        throw new InvalidOperationException("账号云同步已关闭。");
+    }
+
+    private static HttpClient CreateIdleClient(TimeSpan timeout) => new()
+    {
+        Timeout = timeout
     };
 
     private static HttpClient CreateHttpClient(

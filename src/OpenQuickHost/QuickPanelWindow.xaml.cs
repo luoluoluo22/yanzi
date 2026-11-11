@@ -2924,26 +2924,39 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            HidePanelIfAllowed();
             var opensHostWindow = command.App != null || command.HostedView != null;
-            if (!opensHostWindow && _wasActivatedForInput && _previousForegroundWindow != IntPtr.Zero)
+            var input = string.Empty;
+            if (!opensHostWindow)
             {
-                var restored = NativeMethods.SetForegroundWindow(_previousForegroundWindow);
-                HostAssets.AppendLog($"Quick panel execute: restored previous foreground={restored}, {DescribeWindow(_previousForegroundWindow)}.");
-                RestorePreviousFocus("execute");
-            }
-            else if (opensHostWindow)
-            {
-                // Do not hand focus back to the previous application immediately before
-                // opening a host-owned window. Windows foreground-lock rules can then
-                // reject AppExtensionWindow.SetForegroundWindow(), leaving the mini-app
-                // visible only after a second taskbar click.
-                HostAssets.AppendLog($"Quick panel execute: foreground restore skipped for host window, extension={command.ExtensionId}.");
+                HidePanelIfAllowed();
+                if (_wasActivatedForInput && _previousForegroundWindow != IntPtr.Zero)
+                {
+                    var restored = NativeMethods.SetForegroundWindow(_previousForegroundWindow);
+                    HostAssets.AppendLog($"Quick panel execute: restored previous foreground={restored}, {DescribeWindow(_previousForegroundWindow)}.");
+                    RestorePreviousFocus("execute");
+                }
+
+                if (command.ShouldCaptureSelectedInput)
+                {
+                    await Task.Delay(120);
+                    input = await SelectionCaptureService.CaptureSelectedInputAsync();
+                    HostAssets.AppendLog($"Quick panel execute: captured input length={input.Length}.");
+                }
+                else
+                {
+                    HostAssets.AppendLog("Quick panel execute: selection capture skipped for command without context input.");
+                }
+
+                _mainWindow.ExecuteCommandExternally(command, input, launchSource, _previousForegroundWindow);
+                return;
             }
 
-            var input = string.Empty;
+            // 笔记这类后台预加载窗口要在面板隐藏前成为前台。
+            // HidePanel 会把焦点交回上一个程序；交回之后第一次 Show 会被系统拒绝，窗口要再点一次任务栏才到前面。
             if (command.ShouldCaptureSelectedInput)
             {
+                if (_previousForegroundWindow != IntPtr.Zero)
+                    NativeMethods.SetForegroundWindow(_previousForegroundWindow);
                 await Task.Delay(120);
                 input = await SelectionCaptureService.CaptureSelectedInputAsync();
                 HostAssets.AppendLog($"Quick panel execute: captured input length={input.Length}.");
@@ -2953,7 +2966,10 @@ public partial class QuickPanelWindow : Window, INotifyPropertyChanged
                 HostAssets.AppendLog("Quick panel execute: selection capture skipped for command without context input.");
             }
 
+            _wasActivatedForInput = false;
             _mainWindow.ExecuteCommandExternally(command, input, launchSource, _previousForegroundWindow);
+            HidePanelIfAllowed();
+            HostAssets.AppendLog($"Quick panel execute: host window activated before hide, extension={command.ExtensionId}.");
         }
         finally
         {
