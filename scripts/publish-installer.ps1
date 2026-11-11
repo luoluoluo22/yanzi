@@ -213,7 +213,7 @@ if (-not $SkipInstaller) {
     # Keep the asset manifest aligned with the versioned files after Velopack output renaming.
     $assetsManifestPath = Join-Path $installerOutDir 'assets.win.json'
     if (Test-Path $assetsManifestPath) {
-        $assetsManifest = @(Get-Content -LiteralPath $assetsManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+        $assetsManifest = @(Get-Content -LiteralPath $assetsManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json | ForEach-Object { $_ })
         foreach ($asset in $assetsManifest) {
             switch ([string]$asset.RelativeFileName) {
                 'Yanzi-win-Setup.exe' { $asset.RelativeFileName = "Yanzi-win-Setup-$cleanVer.exe" }
