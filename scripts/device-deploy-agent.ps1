@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 Yanzi cross-device deployment receiver. Designed to run OUTSIDE Yanzi via Task Scheduler.
 Only the pinned publisher's non-draft, non-prerelease GitHub Releases are accepted.
@@ -183,3 +183,4 @@ finally {
     if ($locked) { $mutex.ReleaseMutex() }
     $mutex.Dispose()
 }
+
