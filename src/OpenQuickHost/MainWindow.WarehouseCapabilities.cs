@@ -79,7 +79,7 @@ public partial class MainWindow
             // Registry changes are reflected immediately; manifests refresh periodically so
             // search keystrokes do not reread every installed manifest.
             if (fingerprint == _cachedCapabilityFingerprint &&
-                now - _lastCapabilityManifestScanUtc < TimeSpan.FromSeconds(2))
+                now - _lastCapabilityManifestScanUtc < TimeSpan.FromSeconds(5))
             {
                 return _cachedCapabilityCommands;
             }
@@ -114,7 +114,7 @@ public partial class MainWindow
                 .ToArray();
             _cachedCapabilityEntries = entries;
             _cachedCapabilityFingerprint = fingerprint;
-            _lastCapabilityManifestScanUtc = now;
+            _lastCapabilityManifestScanUtc = DateTime.UtcNow;
             return _cachedCapabilityCommands;
         }
     }
