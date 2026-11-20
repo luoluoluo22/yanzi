@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 Yanzi cross-device deployment receiver. Designed to run OUTSIDE Yanzi via Task Scheduler.
 Only the pinned publisher's non-draft, non-prerelease GitHub Releases are accepted.
@@ -171,6 +171,7 @@ try {
     if (-not $runningAgain) { throw 'New Yanzi process did not start' }
     $script:status.installedVersion = $installed.ToString(3)
     Save-State 'verified-running' "installed=$installed; previous=$previous; process started"
+    Get-ChildItem -LiteralPath $downloads -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     Write-Output "DEPLOY_SUCCESS=$installed"
 }
 catch {
