@@ -1,4 +1,4 @@
-﻿<Window x:Class="OpenQuickHost.SettingsWindow"
+<Window x:Class="OpenQuickHost.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -535,7 +535,7 @@
                                         Click="ActivateVipButton_Click"
                                         ToolTip="购买或激活 VIP，开通云同步、跨设备消息和新版升级"
                                         Cursor="Hand"
-                                        Visibility="{Binding IsVipActive, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                        Visibility="{Binding ShowActivateVipButton, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <Button.Style>
                                         <Style TargetType="Button">
                                             <Setter Property="Background" Value="#22F59E0B" />
@@ -1465,7 +1465,7 @@
                                                 </StackPanel>
                                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
                                                     <TextBlock Text="启用个人同步" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmallPlus}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                                                    <CheckBox Style="{DynamicResource Yanzi.Switch.Shadcn}" IsChecked="{Binding EnablePersonalSync, Mode=TwoWay}" Click="SaveWebDavSettingsButton_Click" VerticalAlignment="Center"/>
+                                                    <CheckBox Style="{DynamicResource Yanzi.Switch.Shadcn}" IsChecked="{Binding EnablePersonalSync, Mode=TwoWay}" VerticalAlignment="Center"/>
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -2808,7 +2808,7 @@
                                                     <TextBlock Text="个人仓库" Foreground="{DynamicResource BrushTextMain}" FontSize="{DynamicResource FontSizeSmallPlus}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
                                                 </StackPanel>
                                             </StackPanel>
-                                            <CheckBox Style="{DynamicResource Yanzi.Switch.Shadcn}" IsChecked="{Binding EnablePersonalSync, Mode=TwoWay}" Click="SaveWebDavSettingsButton_Click" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            <CheckBox Style="{DynamicResource Yanzi.Switch.Shadcn}" IsChecked="{Binding EnablePersonalSync, Mode=TwoWay}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                                         </Grid>
                                         <TextBlock Text="账号配置和小程序数据由燕子账号同步；此开关控制个人 WebDAV 仓库备份。" Foreground="{DynamicResource BrushTextSec}" FontSize="{DynamicResource FontSizeSmall}" TextWrapping="Wrap" Margin="0,8,0,0" Height="46"/>
                                         <Rectangle Height="1" Fill="{DynamicResource BrushBorder}" Margin="0,8,0,8"/>

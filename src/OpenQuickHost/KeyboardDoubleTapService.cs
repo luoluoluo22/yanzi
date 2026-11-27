@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Threading;
@@ -63,7 +65,19 @@ public static class KeyboardDoubleTapService
             _sequenceDirty = true;
             _lastTapKind = ModifierTapKind.None;
             _lastTapTimestamp = 0;
+            return;
         }
+
+        // A startup-injected key (or a remote chord that already ended) must not
+        // leave the sequence dirty, or the next clean double-Ctrl is discarded.
+        if (!IsAnyModifierDown())
+            ReleaseStaleSequenceDirty();
+    }
+
+    private static void ReleaseStaleSequenceDirty()
+    {
+        if (_sequenceDirty && _lastTapKind == ModifierTapKind.None)
+            _sequenceDirty = false;
     }
 
 
@@ -181,6 +195,7 @@ public static class KeyboardDoubleTapService
         _lastWinTapTimestamp = 0;
         ApplyConfiguredShortcut(AppSettingsStore.Load().LauncherHotkey);
         ApplyYanmSettings(AppSettingsStore.Load().Yanm);
+        PrepareHookCallback();
         _hookId = SetHook(Proc);
         if (_hookId == IntPtr.Zero)
         {
@@ -253,6 +268,26 @@ public static class KeyboardDoubleTapService
         ReleaseVirtualKey(VkCapsLock);
         CancelForegroundAltMenuMode();
         HostAssets.AppendLog("Keyboard state reset requested from tray: modifiers released and internal state cleared.");
+    }
+
+    private static void PrepareHookCallback()
+    {
+        var flags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+        foreach (var name in new[]
+        {
+            nameof(HookCallback),
+            nameof(HookCallbackCore),
+            nameof(HandleKeyDown),
+            nameof(HandleKeyUp),
+            nameof(HandleControlKeyDown),
+            nameof(ShouldSuppressCurrentCtrlTap),
+            nameof(ShouldSuppressCurrentAltTap)
+        })
+        {
+            var method = typeof(KeyboardDoubleTapService).GetMethod(name, flags);
+            if (method != null)
+                RuntimeHelpers.PrepareMethod(method.MethodHandle);
+        }
     }
 
     private static IntPtr SetHook(LowLevelKeyboardProc proc)
@@ -387,6 +422,10 @@ public static class KeyboardDoubleTapService
                     _lastTapKind = ModifierTapKind.None;
                     _lastTapTimestamp = 0;
                 }
+                else
+                {
+                    ReleaseStaleSequenceDirty();
+                }
                 if (ShouldSuppressCurrentAltTap())
                 {
                     _leftAltDown = true;
@@ -402,6 +441,10 @@ public static class KeyboardDoubleTapService
                     _sequenceDirty = true;
                     _lastTapKind = ModifierTapKind.None;
                     _lastTapTimestamp = 0;
+                }
+                else
+                {
+                    ReleaseStaleSequenceDirty();
                 }
                 if (ShouldSuppressCurrentAltTap())
                 {
@@ -455,6 +498,10 @@ public static class KeyboardDoubleTapService
             _lastTapKind = ModifierTapKind.None;
             _lastTapTimestamp = 0;
         }
+        else
+        {
+            ReleaseStaleSequenceDirty();
+        }
 
         // The first tap has already been completed on key-up. Recognize the second
         // distinct physical press immediately, without waiting for its key-up.
@@ -478,8 +525,11 @@ public static class KeyboardDoubleTapService
         _lastTapKind = ModifierTapKind.None;
         _lastTapTimestamp = 0;
         HostAssets.AppendLog("Keyboard double tap: triggered Control on second key down.");
-        // Never execute UI work inside the low-level keyboard hook.
-        UiDispatcher.Post(() => _onDoubleTap?.Invoke(ModifierTapKind.Control.ToString()));
+        // Open after this key message finishes. Input priority can show the
+        // warehouse while Ctrl is still down, and Windows then drops activation.
+        UiDispatcher.Post(
+            () => _onDoubleTap?.Invoke(ModifierTapKind.Control.ToString()),
+            DispatcherPriority.Background);
         return true;
     }
 
@@ -594,7 +644,9 @@ public static class KeyboardDoubleTapService
             }
 
             // 面板切换经统一派发，避免完整 UI 布局内联在 WH_KEYBOARD_LL 回调里执行
-            UiDispatcher.Post(() => _onDoubleTap?.Invoke(releasedKind.ToString()));
+            UiDispatcher.Post(
+                () => _onDoubleTap?.Invoke(releasedKind.ToString()),
+                DispatcherPriority.Background);
             return shouldSuppress;
         }
 

@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -397,20 +397,21 @@ public sealed partial class PersonalSyncService
                     continue;
                 }
 
+                var appliedNew = false;
                 try
                 {
                     if (await ApplyRemoteEntryAsync(remoteEntry, cancellationToken))
                     {
                         pulled++;
+                        appliedNew = true;
                     }
                 }
                 catch (FileNotFoundException ex)
                 {
-                    // A transient 404 is not evidence of an intentional deletion.
                     throw new InvalidDataException("远端扩展包暂不可用，已停止同步并保留索引，请稍后重试。", ex);
                 }
 
-                mergedMap[extensionId] = remoteEntry;
+                if (appliedNew) mergedMap[extensionId] = remoteEntry;
                 continue;
             }
 
@@ -444,8 +445,12 @@ public sealed partial class PersonalSyncService
                             ("extensionId", extensionId),
                             ("fromVersion", localEntry.Version),
                             ("toVersion", remoteEntry.Version));
+                        mergedMap[extensionId] = remoteEntry;
                     }
-                    mergedMap[extensionId] = remoteEntry;
+                    else
+                    {
+                        mergedMap[extensionId] = localEntry;
+                    }
                     continue;
                 }
 
@@ -474,8 +479,12 @@ public sealed partial class PersonalSyncService
                     if (await ApplyRemoteEntryAsync(remoteEntry, cancellationToken))
                     {
                         pulled++;
+                        mergedMap[extensionId] = remoteEntry;
                     }
-                    mergedMap[extensionId] = remoteEntry;
+                    else
+                    {
+                        mergedMap[extensionId] = localEntry;
+                    }
                     HostAssets.AppendLog(
                         $"Personal sync extension conflict preserved: id={extensionId}, localRevision={localEntry.Revision}, remoteRevision={remoteEntry.Revision}");
                     continue;
@@ -520,20 +529,24 @@ public sealed partial class PersonalSyncService
             }
             else
             {
+                var appliedWinner = ExtensionContentEquivalent(localEntry, winner);
                 try
                 {
-                    if (!ExtensionContentEquivalent(localEntry, winner) &&
-                        await ApplyRemoteEntryAsync(winner, cancellationToken))
+                    if (!appliedWinner && await ApplyRemoteEntryAsync(winner, cancellationToken))
                     {
                         pulled++;
+                        appliedWinner = true;
                     }
                 }
                 catch (FileNotFoundException ex)
                 {
-                    // A transient 404 is not evidence of an intentional deletion.
                     throw new InvalidDataException("远端扩展包暂不可用，已停止同步并保留索引，请稍后重试。", ex);
                 }
-
+                if (!appliedWinner)
+                {
+                    mergedMap[extensionId] = localEntry;
+                    continue;
+                }
             }
 
             if (!EntriesEquivalent(winner, remoteEntry))
@@ -1745,6 +1758,7 @@ public sealed partial class PersonalSyncService
         }
         catch (IOException ex) when (ex.HResult == unchecked((int)0x80070020) || ex.HResult == unchecked((int)0x80070021))
         {
+            StagePendingExtensionUpdate(entry, packageBytes);
             HostAssets.AppendLog($"Personal sync extension update deferred until files are released: id={entry.ExtensionId}, reason=sharing-violation");
             return false;
         }
@@ -1752,6 +1766,60 @@ public sealed partial class PersonalSyncService
 
     private static Task ReplaceDirectoryFromPackageAsync(string targetDirectory, byte[] packageBytes, CancellationToken cancellationToken)
         => SyncPackageSafety.ReplaceDirectoryAsync(targetDirectory, packageBytes, cancellationToken);
+
+    private static void StagePendingExtensionUpdate(WebDavSyncEntry entry, byte[] packageBytes)
+    {
+        try
+        {
+            var dir = HostAssets.PendingExtensionUpdatesPath;
+            Directory.CreateDirectory(dir);
+            var safeId = entry.ExtensionId.Trim();
+            if (string.IsNullOrWhiteSpace(safeId)) return;
+            File.WriteAllBytes(Path.Combine(dir, safeId + ".zip"), packageBytes);
+            File.WriteAllText(Path.Combine(dir, safeId + ".json"), JsonSerializer.Serialize(entry, JsonOptions), Encoding.UTF8);
+        }
+        catch (Exception ex) { HostAssets.AppendLog($"Stage pending update failed: {entry.ExtensionId}, {ex.Message}"); }
+    }
+
+    internal static int ApplyPendingExtensionUpdates()
+    {
+        var dir = HostAssets.PendingExtensionUpdatesPath;
+        if (!Directory.Exists(dir)) return 0;
+        var applied = 0; WebDavSyncIndex? stateIndex = null; var stateChanged = false;
+        foreach (var metaPath in Directory.EnumerateFiles(dir, "*.json"))
+        {
+            var id = Path.GetFileNameWithoutExtension(metaPath);
+            var zipPath = Path.Combine(dir, id + ".zip");
+            if (!File.Exists(zipPath)) { try { File.Delete(metaPath); } catch { } continue; }
+            try
+            {
+                var entry = JsonSerializer.Deserialize<WebDavSyncEntry>(File.ReadAllText(metaPath, Encoding.UTF8), JsonOptions);
+                if (entry == null || string.IsNullOrWhiteSpace(entry.ExtensionId)) continue;
+                var bytes = File.ReadAllBytes(zipPath);
+                SyncPackageSafety.VerifyHash(bytes, entry.PackageHash);
+                var targetDir = SyncPackageSafety.ResolveExtensionDirectory(HostAssets.ExtensionsPath, entry.ExtensionId);
+                SyncPackageSafety.ReplaceDirectoryAsync(targetDir, bytes, CancellationToken.None).GetAwaiter().GetResult();
+                try { File.Delete(zipPath); File.Delete(metaPath); } catch { }
+                applied++;
+                HostAssets.AppendLog($"Applied deferred update at startup: {entry.ExtensionId} v{entry.Version}");
+                stateIndex ??= LoadLocalIndex();
+                var idx = stateIndex.Items.FindIndex(x => string.Equals(x.ExtensionId, entry.ExtensionId, StringComparison.OrdinalIgnoreCase));
+                var updated = new WebDavSyncEntry {
+                    ExtensionId = entry.ExtensionId, Title = entry.Title, Category = entry.Category, Version = entry.Version,
+                    PackageHash = entry.PackageHash, LocalContentHash = entry.PackageHash, PackagePath = entry.PackagePath,
+                    UpdatedAtUtc = entry.UpdatedAtUtc, Revision = entry.Revision, UpdatedByDeviceId = entry.UpdatedByDeviceId,
+                    UpdatedByDeviceName = entry.UpdatedByDeviceName, Deleted = entry.Deleted, Purged = entry.Purged,
+                    LocalDeletionPending = false, BaseRevision = entry.Revision, BasePackageHash = entry.PackageHash,
+                    BaseDeleted = entry.Deleted, BasePurged = entry.Purged
+                };
+                if (idx >= 0) stateIndex.Items[idx] = updated; else stateIndex.Items.Add(updated);
+                stateChanged = true;
+            }
+            catch (Exception ex) { HostAssets.AppendLog($"Deferred update retry skipped: {id}, {ex.Message}"); }
+        }
+        if (stateChanged && stateIndex != null) SaveLocalIndex(stateIndex);
+        return applied;
+    }
 
     private static WebDavSyncIndex ClearLocalPendingFlags(WebDavSyncIndex index)
     {

@@ -38,6 +38,9 @@ public partial class AppExtensionWindow : Window
     private readonly AppExtensionDefinition _definition;
     private bool _activationRequested;
     private bool _initializationCompleted;
+    private volatile bool _isClosed;
+    private bool _forceCloseRequested;
+    private Guid? _runningRegistryInstanceId;
     private static CoreWebView2Environment? _environment;
 
     public AppExtensionWindow(CommandItem command, string? initialInput, string launchSource)
@@ -63,8 +66,19 @@ public partial class AppExtensionWindow : Window
         if (_definition.RunInBackground)
         {
             BackgroundWindows.Add(this);
+            RunningExtensionRegistry.RegisterManagedExtension(
+                _command.ExtensionId,
+                _command.Title,
+                "webview",
+                string.IsNullOrWhiteSpace(_launchSource) ? "app" : _launchSource,
+                isAliveFunc: () => !_isClosed,
+                abortAction: ForceCloseFromRegistry,
+                out var registryInstanceId);
+            _runningRegistryInstanceId = registryInstanceId;
             Closing += (_, e) => {
-                if (System.Windows.Application.Current.MainWindow is MainWindow { AllowClose: true } || Dispatcher.HasShutdownStarted) return;
+                if (_forceCloseRequested ||
+                    System.Windows.Application.Current.MainWindow is MainWindow { AllowClose: true } ||
+                    Dispatcher.HasShutdownStarted) return;
                 e.Cancel = true;
                 Hide();
             };
@@ -268,10 +282,10 @@ public partial class AppExtensionWindow : Window
         _initializationCompleted = true;
 
         // 后台预加载窗口若在初始化期间收到用户打开请求，不得在初始化结束时再次隐藏。
+        // 隐藏时不要把 WindowState 改成 Normal：窗口未显示时这个赋值不会清除系统的最小化状态。
         if (_definition.RunInBackground && isBackgroundLaunch && !_activationRequested)
         {
             Hide();
-            WindowState = WindowState.Normal;
         }
         else if ((shouldActivate || _activationRequested) && IsVisible)
         {
@@ -299,6 +313,12 @@ public partial class AppExtensionWindow : Window
 
     private void AppExtensionWindow_Closed(object? sender, EventArgs e)
     {
+        _isClosed = true;
+        if (_runningRegistryInstanceId is Guid registryInstanceId)
+        {
+            _runningRegistryInstanceId = null;
+            RunningExtensionRegistry.Remove(registryInstanceId, "app window closed");
+        }
         lock (SingleInstanceGate) ActiveWindows.Remove(this);
         BackgroundWindows.Remove(this);
         Browser.Dispose();
@@ -316,6 +336,25 @@ public partial class AppExtensionWindow : Window
             {
                 SingleInstanceWindows.Remove(windowKey);
             }
+        }
+    }
+
+    private void ForceCloseFromRegistry()
+    {
+        void CloseWindow()
+        {
+            if (_isClosed) return;
+            _forceCloseRequested = true;
+            Close();
+        }
+
+        if (Dispatcher.CheckAccess())
+        {
+            CloseWindow();
+        }
+        else if (!Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished)
+        {
+            Dispatcher.Invoke(CloseWindow);
         }
     }
 
@@ -1059,22 +1098,28 @@ public partial class AppExtensionWindow : Window
         ShowInTaskbar = true;
         ShowActivated = true;
         MiniAppTaskbarIdentity.Ensure(this, _command);
-        if (WindowState == WindowState.Minimized)
-        {
-            WindowState = WindowState.Normal;
-        }
-
-        // 后台预加载会先最小化。第一次恢复时坐标可能停在系统的离屏位置，窗口看起来没有到前台。
-        PlaceOnScreenIfParked();
         Show();
-        Activate();
 
         var handle = new WindowInteropHelper(this).Handle;
         if (handle == IntPtr.Zero)
         {
+            if (WindowState == WindowState.Minimized)
+                WindowState = WindowState.Normal;
+            PlaceOnScreenIfParked(IntPtr.Zero);
+            Activate();
             Focus();
             return;
         }
+
+        // 预加载时先最小化再隐藏。WPF 的 WindowState 可能已经是 Normal，系统窗口仍停在 -32000 的最小化位置。
+        if (WindowState == WindowState.Minimized || Win32Native.IsIconic(handle))
+        {
+            WindowState = WindowState.Normal;
+            Win32Native.ShowWindow(handle, Win32Native.SW_RESTORE);
+        }
+
+        PlaceOnScreenIfParked(handle);
+        Activate();
 
         if (Win32Native.GetForegroundWindow() != handle)
         {
@@ -1098,7 +1143,7 @@ public partial class AppExtensionWindow : Window
         }
     }
 
-    private void PlaceOnScreenIfParked()
+    private void PlaceOnScreenIfParked(IntPtr handle)
     {
         var width = Width > 1 && !double.IsNaN(Width) ? Width : Math.Max(MinWidth, 1180);
         var height = Height > 1 && !double.IsNaN(Height) ? Height : Math.Max(MinHeight, 760);
@@ -1112,6 +1157,13 @@ public partial class AppExtensionWindow : Window
         {
             var visible = Rect.Intersect(new Rect(Left, Top, width, height), virtualScreen);
             onScreen = !visible.IsEmpty && visible.Width >= 48 && visible.Height >= 48;
+        }
+
+        if (onScreen && handle != IntPtr.Zero && Win32Native.GetWindowRect(handle, out var native))
+        {
+            var nativeWidth = native.Right - native.Left;
+            var nativeHeight = native.Bottom - native.Top;
+            onScreen = native.Left > -16000 && native.Top > -16000 && nativeWidth >= 48 && nativeHeight >= 48;
         }
 
         if (onScreen)

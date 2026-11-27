@@ -717,6 +717,9 @@ public partial class MainWindow
         ApplyFilter(SearchBox.Text);
     }
 
+    private bool _launcherShowInProgress;
+    private long _launcherShowGraceUntilTick;
+
     public void ShowPanel()
     {
         if (HostRuntimeProfile.IsRuntime) { SharedRuntimeHost.Current?.RequestShell("launcher.show"); return; }
@@ -726,36 +729,55 @@ public partial class MainWindow
             _previousForegroundWindow = activeHwnd;
         }
 
-        HasBeenShown = true;
-        ShowInTaskbar = true;
-        if (!IsVisible)
+        // The first Show after process start builds the window and the scope-tab
+        // popup. That activation blip used to fire Deactivated and hide the
+        // warehouse before it was visible, so the first double-Ctrl looked ignored.
+        _launcherShowInProgress = true;
+        try
         {
-            Show();
-            UpdateLayout();
-        }
+            HasBeenShown = true;
+            ShowInTaskbar = true;
+            if (!IsVisible)
+            {
+                Show();
+                UpdateLayout();
+            }
 
-        if (WindowState == WindowState.Minimized)
+            if (WindowState == WindowState.Minimized)
+            {
+                WindowState = WindowState.Normal;
+            }
+
+            ResumeSearchAfterShow();
+            RefreshWindowDpiIfNeeded(_dpiRefreshRequested);
+
+            // Warehouse is a regular foreground window, not an always-on-top overlay.
+            // File pickers and other applications must be allowed above it.
+            Topmost = false;
+            BringMainWindowToFront();
+            SetSearchScopePopupOpen(true);
+        }
+        finally
         {
-            WindowState = WindowState.Normal;
+            _launcherShowInProgress = false;
+            _launcherShowGraceUntilTick = Environment.TickCount64 + 600;
         }
-
-        ResumeSearchAfterShow();
-        RefreshWindowDpiIfNeeded(_dpiRefreshRequested);
-
-        // Warehouse is a regular foreground window, not an always-on-top overlay.
-        // File pickers and other applications must be allowed above it.
-        Topmost = false;
-        BringMainWindowToFront();
-        SetSearchScopePopupOpen(true);
 
         Dispatcher.BeginInvoke(() =>
         {
-            // Do not reclaim foreground focus after another window (e.g. a file picker) opens.
-            if (!IsVisible || !IsActive) return;
+            if (!IsVisible) return;
+            // Recover activation lost to the scope popup during this show.
+            // Once the grace ends, leave focus with file pickers and other apps.
+            if (!IsActive && IsLauncherShowGraceActive() && !OwnedWindows.OfType<Window>().Any(static window => window.IsVisible))
+                BringMainWindowToFront();
+            if (!IsActive) return;
             SearchBox.SelectAll();
             RepositionSearchScopePopup();
         }, DispatcherPriority.ApplicationIdle);
     }
+
+    private bool IsLauncherShowGraceActive() =>
+        _launcherShowInProgress || Environment.TickCount64 < _launcherShowGraceUntilTick;
 
     public void ShowMousePanel()
     {
@@ -2115,6 +2137,9 @@ public partial class MainWindow
 
     private void Window_Deactivated(object? sender, EventArgs e)
     {
+        if (IsLauncherShowGraceActive())
+            return;
+
         // SearchScopePopup is a separate HWND. Losing focus to a native mini-app
         // must not detach the visible warehouse's tabs from its window.
         var foregroundWindow = Win32Native.GetForegroundWindow();

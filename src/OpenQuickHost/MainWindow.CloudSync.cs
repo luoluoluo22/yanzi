@@ -1024,6 +1024,14 @@ public partial class MainWindow
         var settings = AppSettingsStore.Load();
         if (!PersonalSyncBackendFactory.IsConfigured(settings))
         {
+            if (PersonalSyncBackendFactory.IsManuallyConfigured(settings) && settings.PersonalSync?.Enabled != true)
+            {
+                CloudSyncDiagnostics.Log(
+                    "MainWindow.PersonalSync",
+                    "Background sync skipped: personal sync is disabled in saved settings",
+                    ("reason", reason),
+                    ("provider", PersonalSyncProviders.Normalize(settings.PersonalSync?.Provider)));
+            }
             return;
         }
 

@@ -183,6 +183,7 @@ public partial class App : WpfApplication
 
         // 2. 立即执行单实例拦截，拒绝任何多开开销与初始化异常。
         // 将此逻辑提到最前，不仅大幅降低了多实例点击时的 CPU/IO 损耗，更避免了多个进程并发做环境初始化（如读写配置、加载 Everything）所产生的死锁和异常崩溃。
+        WaitForPreviousInstanceIfRequested(e.Args);
         _singleInstanceService = new SingleInstanceService(SingleInstanceAppId);
         var isPrimary = _singleInstanceService.TryAcquirePrimaryInstance();
         HostAssets.AppendLog($"[Startup] TryAcquirePrimaryInstance returned: {isPrimary}");
@@ -236,6 +237,8 @@ public partial class App : WpfApplication
             Shutdown(1);
             return;
         }
+        try { OpenQuickHost.Sync.PersonalSyncService.ApplyPendingExtensionUpdates(); }
+        catch (Exception ex) { HostAssets.AppendLog($"Startup pending extension updates failed: {ex.Message}"); }
         YanziBuiltinCapabilityRegistration.Register();
 
         // 绑定未处理异常捕获，开始进入核心初始化阶段
@@ -1360,6 +1363,39 @@ public partial class App : WpfApplication
         }
     }
 
+    private void TrayRestart_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var exePath = Environment.ProcessPath;
+            if (!string.IsNullOrWhiteSpace(exePath) && System.IO.File.Exists(exePath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = exePath,
+                    Arguments = $"--wait-pid {Environment.ProcessId}",
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch (Exception ex) { HostAssets.AppendLog($"TrayRestart failed: {ex.Message}"); }
+        if (MainWindow is MainWindow mw) _ = mw.RequestGracefulShutdownAsync();
+        else Shutdown();
+    }
+
+    private static void WaitForPreviousInstanceIfRequested(string[] args)
+    {
+        for (var i = 0; i < args.Length - 1; i++)
+        {
+            if (string.Equals(args[i], "--wait-pid", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(args[i + 1], out var pid) && pid > 0 && pid != Environment.ProcessId)
+            {
+                try { using var proc = Process.GetProcessById(pid); proc.WaitForExit(10000); } catch { }
+                break;
+            }
+        }
+    }
+
     private void TrayMobileInbox_Click(object sender, RoutedEventArgs e)
     {
         (MainWindow as MainWindow)?.ShowMobileInboxWindow();
@@ -1634,6 +1670,8 @@ public partial class App : WpfApplication
         menu.AddAction(_listenerServicesPaused ? "恢复全部服务" : "暂停全部服务",
             () => TrayToggleMousePanelService_Click(this, new RoutedEventArgs()),
             icon: TrayMenuIcon(_listenerServicesPaused ? "play" : "pause"));
+        menu.AddAction("重启", () => TrayRestart_Click(this, new RoutedEventArgs()),
+            icon: TrayMenuIcon("refresh"));
         menu.AddAction("退出", () => TrayExit_Click(this, new RoutedEventArgs()),
             destructive: true, icon: TrayMenuIcon("logout", destructive: true));
         return menu;

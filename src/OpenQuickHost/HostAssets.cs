@@ -60,7 +60,11 @@ public static class HostAssets
         public void Dispose() => restore();
     }
 
-    public static string ExtensionsPath => ResolveDataDirectoryPath("Extensions");
+    public static string ExtensionsPath => ResolveDataDirectoryPath("Extensions");
+
+    public static string CSharpCachePath => ResolveDataDirectoryPath("CSharpCache");
+
+    public static string PendingExtensionUpdatesPath => ResolveDataDirectoryPath("PendingExtensionUpdates");
 
     public static string ExtensionRecycleBinPath => ResolveDataDirectoryPath("ExtensionRecycleBin");
 

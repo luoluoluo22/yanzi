@@ -109,6 +109,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
     private string _originalAiSystemPrompt = string.Empty;
     private bool _hasAiSettingsChanged;
     private PersonalSyncSettings _personalSyncSettings = new();
+    private bool _isLoadingPersonalSyncState;
     private PersonalSyncSecretBag _personalSyncSecrets = new();
 
     // 扩展筛选状态
@@ -1051,6 +1052,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             }
             else if (IsSyncSelected)
             {
+                LoadPersonalSyncStateFromSettings();
                 RefreshSyncActivityLog();
                 RefreshAccountObjectSyncStatus();
                 RefreshPersonalExtensionSyncStatus();
@@ -1474,8 +1476,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
             _isVipActive = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowActivateVipButton));
         }
     }
+
+    public bool ShowActivateVipButton => _mainWindow.CloudSyncClient != null && !IsVipActive;
 
     public string VipBadgeText
     {
@@ -2100,6 +2105,10 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
             _personalSyncSettings.Enabled = value;
             OnPropertyChanged();
             RefreshWebDavSummary();
+            if (!_isLoadingPersonalSyncState)
+            {
+                SaveWebDavSettings();
+            }
         }
     }
 
@@ -6398,6 +6407,9 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void LoadPersonalSyncStateFromSettings()
     {
+        _isLoadingPersonalSyncState = true;
+        try
+        {
         _settings = AppSettingsStore.Load();
         _settingsPersistence.Reset(_settings);
         _personalSyncSettings = ClonePersonalSyncSettings(_settings.PersonalSync);
@@ -6448,6 +6460,11 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
         if (S3SecretAccessKeyBox != null) S3SecretAccessKeyBox.Password = _personalSyncSecrets.S3SecretAccessKey ?? string.Empty;
         if (WebDavPasswordBox != null) WebDavPasswordBox.Password = _personalSyncSecrets.WebDavPassword ?? string.Empty;
         RefreshWebDavSummary();
+        }
+        finally
+        {
+            _isLoadingPersonalSyncState = false;
+        }
     }
 
     private static PersonalSyncSettings ClonePersonalSyncSettings(PersonalSyncSettings? settings)
@@ -7452,6 +7469,7 @@ public partial class SettingsWindow : Window, INotifyPropertyChanged
 
     private void RefreshAccountSummary()
     {
+        OnPropertyChanged(nameof(ShowActivateVipButton));
         var session = SyncSessionStore.Load();
         HostAssets.AppendLog($"Settings RefreshAccountSummary: sessionExists={session != null}, sessionExpired={session != null && session.ExpiresAt <= DateTimeOffset.UtcNow.ToUnixTimeSeconds()}");
         if (session != null && session.ExpiresAt > DateTimeOffset.UtcNow.ToUnixTimeSeconds())

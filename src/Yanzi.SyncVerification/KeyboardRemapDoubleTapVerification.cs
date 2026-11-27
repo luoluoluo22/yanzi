@@ -159,6 +159,17 @@ internal static class KeyboardRemapDoubleTapVerification
             Ensure(!Down(0xA2) && !Up(0xA2), "First clean Ctrl tap must pass");
             Other(0x41, 0x0100);
             Ensure(!Down(0xA2) && !Up(0xA2), "Remote injected letter did not invalidate double tap");
+
+            Reset();
+            Other(0x41, 0x0100);
+            Other(0x41, 0x0101);
+            Ensure(!Down(0xA2) && !Up(0xA2), "Startup injected key consumed the first Ctrl tap");
+            Ensure(Down(0xA2) && Up(0xA2), "Double Ctrl after a finished injected key did not open the launcher");
+
+            Reset();
+            Other(0x41, 0x0100);
+            Ensure(!Down(0xA2) && !Up(0xA2), "Injected key down without keyup consumed the first Ctrl tap");
+            Ensure(Down(0xA2) && Up(0xA2), "Double Ctrl after an injected key down did not open the launcher");
         }
         finally { Reset(); }
     }

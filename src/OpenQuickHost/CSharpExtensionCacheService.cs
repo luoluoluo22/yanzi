@@ -15,7 +15,10 @@ public static class CSharpExtensionCacheService
 
     public static string GetBuildRoot(string extensionDirectoryPath, string sourceHash)
     {
-        return Path.Combine(extensionDirectoryPath, CacheDirectoryName, sourceHash);
+        var trimmed = extensionDirectoryPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var extensionId = Path.GetFileName(trimmed);
+        if (string.IsNullOrWhiteSpace(extensionId)) extensionId = "unknown";
+        return Path.Combine(HostAssets.CSharpCachePath, extensionId, sourceHash);
     }
 
     public static void TouchBuildRoot(string buildRoot)
@@ -138,19 +141,8 @@ public static class CSharpExtensionCacheService
 
     private static IEnumerable<DirectoryInfo> EnumerateExtensionCacheRoots()
     {
-        if (!Directory.Exists(HostAssets.ExtensionsPath))
-        {
-            yield break;
-        }
-
-        foreach (var extensionDirectory in Directory.EnumerateDirectories(HostAssets.ExtensionsPath))
-        {
-            var cacheRoot = Path.Combine(extensionDirectory, CacheDirectoryName);
-            if (Directory.Exists(cacheRoot))
-            {
-                yield return new DirectoryInfo(cacheRoot);
-            }
-        }
+        if (!Directory.Exists(HostAssets.CSharpCachePath)) yield break;
+        foreach (var d in Directory.EnumerateDirectories(HostAssets.CSharpCachePath)) yield return new DirectoryInfo(d);
     }
 
     private static IEnumerable<CacheEntry> EnumerateCacheEntries(DirectoryInfo cacheRoot)
@@ -234,16 +226,10 @@ public static class CSharpExtensionCacheService
 
     private static bool IsSafeCacheEntryPath(string path)
     {
-        var extensionsRoot = NormalizePath(HostAssets.ExtensionsPath);
-        if (extensionsRoot == null ||
-            !path.StartsWith(extensionsRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var parent = Directory.GetParent(path);
-        return parent != null &&
-               string.Equals(parent.Name, CacheDirectoryName, StringComparison.OrdinalIgnoreCase);
+        var cacheRoot = NormalizePath(HostAssets.CSharpCachePath);
+        if (cacheRoot == null || !path.StartsWith(cacheRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return false;
+        var grandParent = Directory.GetParent(path)?.Parent;
+        return grandParent != null && string.Equals(NormalizePath(grandParent.FullName), cacheRoot, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string? NormalizePath(string? path)
